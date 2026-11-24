@@ -237,6 +237,17 @@ html[data-emoji="on"] .nav button:not(.on) .ic{filter:grayscale(.85);opacity:.75
 .box.sum{border-radius:12px}
 .sum .meter{display:flex;align-items:center}
 .sum .pbar{width:100%!important}
+.wex{margin-top:10px}
+.bigtime{font-size:2.6em;font-weight:700;text-align:center;font-variant-numeric:tabular-nums;letter-spacing:-.02em;margin:6px 0 2px}
+.wsets{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.wset{display:grid;grid-template-columns:3.2em 1fr 1fr 44px;gap:8px;align-items:center;font-size:.9em}
+.wset label{display:flex;align-items:center;gap:5px;color:var(--dim)}
+.wset input{width:100%;min-width:0;padding:7px 6px;text-align:center;color:var(--fg)}
+.wtick{width:44px;height:40px;margin:0;border:2px solid var(--dim);border-radius:10px;font-size:20px;font-weight:800;text-align:center;color:var(--bg);background:transparent}
+.wset.done .wtick{background:var(--good);border-color:var(--good)}
+.wset.done input{opacity:.6}
+.rest{position:sticky;top:6px;z-index:5;margin:8px auto 0;width:max-content;padding:4px 14px;border-radius:99px;background:var(--acc);color:#fff;font-size:.9em}
+.rex .seg button{padding:3px 10px;font-size:.85em}
 @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
 </style>
 <script>try{var L=JSON.parse(localStorage.getItem('questlog.look')||'null'),h=document.documentElement;if(L){if(L.mode)h.dataset.mode=L.mode;if(L.emoji)h.dataset.emoji=L.emoji}}catch(e){}</script>
@@ -249,7 +260,7 @@ html[data-emoji="on"] .nav button:not(.on) .ic{filter:grayscale(.85);opacity:.75
   <button data-tab="summary"><span class="ic">🧾</span>summary</button>
   <button data-tab="goals"><span class="ic">🎯</span>goals</button>
   <button data-tab="money"><span class="ic">💰</span>money</button>
-  <button data-tab="data"><span class="ic">📈</span>data</button>
+  <button data-tab="workouts"><span class="ic">🏋️</span>workouts</button>
   <button data-tab="more"><span class="ic">☰</span>more</button>
 </div></nav>
 <div class="toasts" id="toasts"></div>
@@ -316,7 +327,7 @@ function decayCfg(){return Object.assign({},DECAY_DEFAULT,(S&&S.settings&&S.sett
 /* ============ migrate ============ */
 function migrate(){
   if(!S) return;
-  S.settings=S.settings||{};S.goals=S.goals||[];
+  S.settings=S.settings||{};S.goals=S.goals||[];S.workouts=S.workouts||[];
   for(const s of S.stats){ if(s.colorIdx==null){ let i=PAL_DARK.indexOf(s.color); if(i<0) i=PAL_LIGHT.indexOf(s.color); s.colorIdx=i<0?0:i; } if(s.decays==null) s.decays=true; }
   if(/^yotsuba/.test(S.settings.theme||''))S.settings.theme='light';
   if(!S.settings.emojiSeeded){
@@ -471,7 +482,7 @@ async function runQ(k){
 }
 function saveState(){dirty();if(mode==='local'){saveLocal();return}stateDirty=true;clearTimeout(stateTimer);stateTimer=setTimeout(()=>queueWrite(rootRef,clone(S),()=>{stateDirty=false}),350)}
 function saveDay(s){dirty();if(mode==='local'){saveLocal();return}dirtyDays.add(s);queueWrite(daysCol.doc(s),clone(DAYS[s]),()=>dirtyDays.delete(s))}
-function saveLocal(){try{localStorage.setItem(LS_KEY,JSON.stringify({S,DAYS,FIN}))}catch(e){}}
+function saveLocal(){try{localStorage.setItem(LS_KEY,JSON.stringify({S,DAYS,FIN}))}catch(e){}if(typeof syncReminders==='function')syncReminders()}
 function loadLocal(){try{const r=JSON.parse(localStorage.getItem(LS_KEY)||'null');if(r){S=r.S;DAYS=r.DAYS||{};FIN=r.FIN||null}}catch(e){}}
 
 async function boot(){
@@ -500,7 +511,7 @@ async function boot(){
     if(started)render();else maybeStart();
   },err=>{console.warn(err);gotDays=true;maybeStart()});
 }
-function start(){rebuildIndex();$('#nav').classList.remove('hidden');render();checkLevelDrops();
+function start(){rebuildIndex();$('#nav').classList.remove('hidden');if(S&&S.activeSession&&!activeSession())S.activeSession=null;render();checkLevelDrops();syncReminders();
   let seen=false;try{seen=localStorage.getItem('questlog.intro')==='1'}catch(e){}
   if(!seen&&!(S&&S.settings&&S.settings.introSeen))showIntro();}
 function showIntro(){
@@ -553,6 +564,10 @@ function starter(blank){
     mk('shopping','once',{date:t,stats:[H]},9), mk('review goals for the month','monthly',{stats:[M],xp:40},10),
   ];
   const h=document.documentElement;S={version:3,stats,tasks,settings:{introSeen:true,emojiSeeded:true,emoji:h.dataset.emoji,skin:h.dataset.skin,theme:h.dataset.theme,mode:h.dataset.mode,decay:clone(DECAY_DEFAULT),celebrate:'full',hideDone:false,haptics:true}};
+  if(!blank){const wt=S.tasks.find(x=>x.title==='workout');const w={id:uid(),name:'full body',emoji:emojiOn()?'🏋️':'',stats:[B],xp:20,taskId:wt.id,exercises:[
+    {id:uid(),name:'squat',kind:'strength',sets:5,reps:5,weight:'',unit:'kg',minutes:''},{id:uid(),name:'bench press',kind:'strength',sets:5,reps:5,weight:'',unit:'kg',minutes:''},
+    {id:uid(),name:'barbell row',kind:'strength',sets:5,reps:5,weight:'',unit:'kg',minutes:''},{id:uid(),name:'easy run',kind:'cardio',minutes:15}]};
+    S.workouts=[w];wt.workoutId=w.id;wt.title='full body';}
   saveState();render();
 }
 
@@ -712,15 +727,16 @@ function render(){
   const app=$('#app');
   charts.forEach(c=>c.destroy());charts=[];
   $('#fab').classList.toggle('hidden',!S||!(tab==='today'||(tab==='more'&&moreTab==='cal')));$('#fab').textContent=(emojiOn()?'⚡ ':'')+'log';
-  document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
+  document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab||(tab==='workout'&&b.dataset.tab==='workouts')));
   const banner=(syncNote?`<div class="banner">! ${esc(syncNote)}</div>`:'');
   if(!S){app.innerHTML=banner+welcomeView();bindWelcome();fitArt();return}
   if(tab==='today')app.innerHTML=banner+todayView();
   if(tab==='summary'){app.innerHTML=banner+summaryView();drawSummaryCharts()}
   if(tab==='goals'){app.innerHTML=banner+goalsView();drawGoalChart()}
-  if(tab==='money'){app.innerHTML=banner+moneyView();drawMoneyCharts()}
-  if(tab==='more')app.innerHTML=banner+moreView();
-  if(tab==='data'){app.innerHTML=banner+dataView();drawCharts()}
+  if(tab==='money'){app.innerHTML=banner+moneyView();if(moneySub==='income')drawIncomeStack($('#m-inc2'),moneyRangeCheckins());else drawMoneyCharts()}
+  if(tab==='more'){app.innerHTML=banner+moreView();if(moreTab==='data')drawCharts()}
+  if(tab==='workouts'){app.innerHTML=banner+workoutsView();drawWorkoutCharts()}
+  if(tab==='workout'){app.innerHTML=banner+sessionView()}
   fitArt();
 }
 function artHTML(){
@@ -759,8 +775,9 @@ function recurLabel(t){
 }
 function taskItem(o,date,extra){
   const t=o.t,st=taskStreak(t,date);
-  const gl=t.goalId&&goalById(t.goalId);const meta=[t.time?`<span>${esc(t.time)}</span>`:'',gl?`<span data-gopen="${gl.id}" style="text-decoration:underline dotted">${emojiOn()?'🎯 ':'→ '}${esc(gl.title)}</span>`:'',o.carried&&!o.done?`<span class="carry">↪ from ${fmtDate(t.date)}</span>`:'',extra||'',statChips(t.stats),`<span>+${t.xp||10}xp</span>`,st>=2?`<span class="acc">streak ${st}</span>`:''].join('');
-  return `<div class="task ${o.done?'done':''}" data-toggle="${t.id}" data-date="${date}">
+  const gl=t.goalId&&goalById(t.goalId);const wkx=t.workoutId&&wkById(t.workoutId);const meta=[t.time?`<span>${esc(t.time)}</span>`:'',wkx?`<span class="acc">${(()=>{const a=activeSession();return a&&a.taskId===t.id?'● in progress — tap to resume':o.done?'workout done':'▶ tap to start · '+(wkx.exercises||[]).length+' exercise'+((wkx.exercises||[]).length===1?'':'s')})()}</span>`:'',gl?`<span data-gopen="${gl.id}" style="text-decoration:underline dotted">${emojiOn()?'🎯 ':'→ '}${esc(gl.title)}</span>`:'',o.carried&&!o.done?`<span class="carry">↪ from ${fmtDate(t.date)}</span>`:'',extra||'',statChips(t.stats),`<span>+${t.xp||10}xp</span>`,st>=2?`<span class="acc">streak ${st}</span>`:''].join('');
+  const wk=t.workoutId&&wkById(t.workoutId);const act=activeSession();const going=wk&&act&&act.taskId===t.id&&act.date===date;
+  return `<div class="task ${o.done?'done':''}" ${wk&&!o.done?`data-wstart="${t.id}|${date}"`:`data-toggle="${t.id}" data-date="${date}"`}>
     <span class="cb">${skin()==='terminal'?(o.done?'[x]':'[ ]'):''}</span>
     <div><div class="ttl">${esc(em(t.emoji))}${esc(t.title)}</div><div class="meta">${meta}</div></div>
     <button class="bk edit" data-edit="${t.id}" aria-label="edit">${skin()==='terminal'?'…':'⋯'}</button></div>`;
@@ -802,6 +819,7 @@ function todayView(){
     <dt>streak</dt><dd>${em('🔥')}${activeStreak()} day${activeStreak()===1?'':'s'}</dd>
     <dt>player</dt><dd>${em('⭐')}lv ${pl.lvl} <span class="meter acc">${meter(pl.pct,10)}</span> <span class="dim">${pl.into}/${pl.need}</span></dd>
   </dl></div>
+  ${isT?workoutBanner():''}
   ${isT?checkinBanner():''}
   ${isT?decayWarnings():''}
   <form class="quick" id="qa-form" data-date="${viewDate}"><span>&gt;</span><input id="qa" placeholder="add a one-off for ${isT?'today':fmtDate(viewDate)}…" autocomplete="off" enterkeyhint="done"><button type="submit" class="bk">add</button></form>
@@ -884,12 +902,13 @@ function settingsView(){
   <div class="field"><label>finished tasks</label>${seg('hideDone',[['false','sink to the bottom'],['true','hide them']],setting('hideDone',false))}</div>
   <div class="field"><label>emojis</label>${seg('emoji',[['on','on'],['off','off']],document.documentElement.dataset.emoji==='off'?'off':'on')}<div class="dim" style="font-size:.8em;margin-top:4px">on tasks, stats, tabs and celebrations. set each one by editing the task or stat.</div></div>
   <div class="field"><label>vibrate on tick (android)</label>${seg('haptics',[['true','on'],['false','off']],setting('haptics',true))}</div>
+  ${remindersSection()}
   <h2><span class="t">stat decay</span></h2>
   <div class="field">${seg('dec-on',[['1','on'],['0','off']],cfg.on?'1':'0')}</div>
   <div class="field ${cfg.on?'':'hidden'}"><label>grace period</label>${seg('dec-grace',[1,2,3,5,7].map(n=>[n,n+' day'+(n>1?'s':'')]),cfg.grace)}</div>
   <div class="field ${cfg.on?'':'hidden'}"><label>speed</label>${seg('dec-rate',[[0.05,'gentle'],[0.1,'normal'],[0.2,'harsh']],cfg.rate)}</div>
   <p class="dim" style="font-size:.85em">after ${cfg.grace} day${cfg.grace>1?'s':''} without xp, a stat loses ${Math.round(cfg.rate*100)}% of its current level’s xp each day and can drop levels. any xp for that stat stops it. to exempt one stat, tap it on the stats tab.</p>
-  <h2><span class="t">data</span><span class="r" style="font-size:.8em">v1.0.0</span></h2>
+  <h2><span class="t">data</span><span class="r" style="font-size:.8em">v1.3.0</span></h2>
   <p>${em('📱')}everything is saved only on this device.<br><span class="dim" style="font-size:.85em">${(()=>{let l=null;try{l=localStorage.getItem('questlog.lastBackup')}catch(e){};return l?'last backup file: '+fmtDate(l,true)+(dayDiff(l,today())>30?' — <span class="acc">time for a new one</span>':''):'<span class="acc">you haven’t saved a backup file yet</span>'})()}</span></p>
   <div class="actions" style="justify-content:flex-start"><button data-intro class="bk btn ghost">show intro again</button><button data-dlbackup class="bk btn">${em('💾')}save backup file</button><button data-ulbackup class="bk btn ghost">restore from file</button><input type="file" id="ul-file" accept=".json,application/json" hidden><button data-export class="bk btn ghost">copy backup text</button><button data-import class="bk btn ghost">paste backup text</button><button data-reset class="bk btn danger">reset everything</button></div>`;
 }
@@ -980,7 +999,14 @@ function saveFin(){if(mode==='local'){saveLocal();return}finDirty=true;clearTime
 function money(n,dp){if(n==null||isNaN(n))return '–';try{return new Intl.NumberFormat('en-AU',{style:'currency',currency:F().currency||'AUD',maximumFractionDigits:dp??0,minimumFractionDigits:dp??0}).format(n)}catch(e){return '$'+Math.round(n)}}
 function signed(n){return (n>0?'+':n<0?'−':'±')+money(Math.abs(n))}
 function fmtNum(n){if(n==null||n==='')return '–';return String(Math.round(Number(n)*100)/100)}
-function weeklyIncome(){return F().income.reduce((a,s)=>a+(Number(s.amount)||0)*(FREQ[s.freq]||1),0)}
+function streams(all){const inc=F().income;inc.forEach((x,i)=>{if(x.colorIdx==null)x.colorIdx=[2,0,6,3,4,5,1,7][i%8];if(x.emoji==null){const l=(x.name||'').toLowerCase();const m=STREAM_EMO.find(([k])=>l.includes(k));x.emoji=m?m[1]:'💵'}});return inc.filter(s=>all||!s.archived)}
+function streamWeekly(s){return (Number(s.amount)||0)*(FREQ[s.freq]||1)}
+function weeklyIncome(){return streams().reduce((a,s)=>a+streamWeekly(s),0)}
+function streamColor(s,i){const pal=isLight()?PAL_LIGHT:PAL_DARK;return pal[(s.colorIdx??i??0)%8]}
+const STREAM_EMO=[['wage','💼'],['salary','💼'],['job','💼'],['work','💼'],['side','🛠️'],['hustle','🛠️'],['freelanc','💻'],['contract','💻'],['etsy','🛍️'],['shop','🛍️'],['sell','🛍️'],['art','🎨'],['commission','🎨'],['dividend','📈'],['invest','📈'],['interest','🏦'],['rent','🏠'],['centrelink','🏛️'],['benefit','🏛️'],['pension','🏛️'],['gift','🎁'],['tutor','📚'],['music','🎵'],['stream','📺'],['youtube','📺']];
+// income per stream recorded at a check-in; older check-ins (before streams) count as "unassigned"
+function ciIncomeBy(c){if(c.incomeBy&&Object.keys(c.incomeBy).length)return c.incomeBy;return c.income?{_:Number(c.income)}:{}}
+function streamName(id){if(id==='_')return 'unassigned (older check-ins)';const s=F().income.find(x=>x.id===id);return s?s.name:'removed stream'}
 function accById(id){return F().accounts.find(a=>a.id===id)}
 function netOf(c){let a=0,d=0;for(const acc of F().accounts){const v=c.balances[acc.id];if(v==null||v==='')continue;if(acc.type==='debt')d+=Number(v);else a+=Number(v)}return {assets:a,debts:d,net:a-d}}
 function checkins(){return F().checkins.slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0)}
@@ -1006,25 +1032,32 @@ function checkinSheet(editId){
     ${ex?'':`<div class="dim" style="margin:-6px 0 12px;font-size:.85em">last time’s numbers are filled in — just change what moved.</div>`}
     <div class="field"><label>date</label><input type="date" id="ci-date" value="${ex?ex.date:today()}"></div>
     ${group('asset')}${group('debt')}
-    <div class="field"><label>income this week</label><input type="number" inputmode="decimal" step="0.01" id="ci-inc" value="${ex?ex.income:Math.round(weeklyIncome()*100)/100}" style="width:9em;text-align:right"><div class="dim" style="font-size:.8em;margin-top:4px">pre-filled from your income list — change it if this week was different</div></div>
+    ${(()=>{const ss=streams().concat(ex?F().income.filter(x=>x.archived&&ex.incomeBy&&ex.incomeBy[x.id]!=null):[]);
+      if(!ss.length)return `<div class="field"><label>income this week</label><input type="number" inputmode="decimal" step="0.01" id="ci-inc" value="${ex?ex.income:''}" style="width:9em;text-align:right"><div class="dim" style="font-size:.8em;margin-top:4px">tip: add income streams on the money tab and this fills itself in.</div></div>`;
+      const pre=x=>{if(ex)return ex.incomeBy&&ex.incomeBy[x.id]!=null?ex.incomeBy[x.id]:'';if(x.variable)return '';return Math.round(streamWeekly(x)*100)/100};
+      return `<div class="field"><label>income this week</label>${ss.map(x=>`<div class="row" style="margin-bottom:6px"><span class="grow">${sdotC(streamColor(x))}${esc(em(x.emoji))}${esc(x.name)}${x.variable&&!ex?` <span class="dim" style="font-size:.8em">(usually ~${money(streamWeekly(x))})</span>`:''}</span><input type="number" inputmode="decimal" step="0.01" data-inc="${x.id}" value="${pre(x)}" placeholder="0" style="width:9em;text-align:right"></div>`).join('')}
+        <div class="row" style="justify-content:flex-end"><b id="ci-inctot"></b></div><div class="dim" style="font-size:.8em;margin-top:2px">steady streams are pre-filled; type what actually came in for the ones that vary.</div></div>`})()}
     <div class="field"><label>note (optional)</label><input id="ci-note" value="${esc(ex?ex.note||'':'')}" placeholder="e.g. paid rego, bonus came in"></div>
     <div class="acc" id="ci-net" style="font-weight:700"></div>
     <div class="actions">${ex?'<button class="bk btn danger" id="ci-del" style="margin-right:auto">delete</button>':''}<button class="bk btn ghost" id="ci-x">cancel</button><button class="bk btn" id="ci-save">save</button></div>`,sh=>{
     const read=()=>{const b={};sh.querySelectorAll('[data-acc]').forEach(i=>{if(i.value!=='')b[i.dataset.acc]=Number(i.value)});return b};
     const cmp=ex?checkins().filter(c=>c.date<ex.date).pop():last;
     const upd=()=>{const n=netOf({balances:read()}).net;const p=cmp?netOf(cmp).net:null;sh.querySelector('#ci-net').innerHTML=`net worth ${money(n)}${p!=null?` <span class="${n-p>=0?'good':'bad'}">${signed(n-p)} since ${fmtDate(cmp.date)}</span>`:''}`};
+    const readInc=()=>{const b={};sh.querySelectorAll('[data-inc]').forEach(i=>{if(i.value!=='')b[i.dataset.inc]=Number(i.value)});return b};
+    const updInc=()=>{const t=sh.querySelector('#ci-inctot');if(t)t.textContent='total '+money(Object.values(readInc()).reduce((a,b)=>a+b,0),2)};
+    sh.querySelectorAll('[data-inc]').forEach(i=>i.addEventListener('input',updInc));updInc();
     sh.querySelectorAll('[data-acc]').forEach(i=>i.addEventListener('input',upd));upd();
     sh.querySelector('#ci-x').onclick=closeSheet;
     if(ex)sh.querySelector('#ci-del').onclick=()=>confirmSheet('delete this check-in?','delete',()=>{f.checkins=f.checkins.filter(c=>c.id!==ex.id);saveFin();render()});
     sh.querySelector('#ci-save').onclick=()=>{
-      const rec={id:ex?ex.id:uid(),date:sh.querySelector('#ci-date').value||today(),balances:read(),income:Number(sh.querySelector('#ci-inc').value)||0,note:sh.querySelector('#ci-note').value.trim()};
+      const ib=readInc();const single=sh.querySelector('#ci-inc');const rec={id:ex?ex.id:uid(),date:sh.querySelector('#ci-date').value||today(),balances:read(),incomeBy:single?{}:ib,income:single?(Number(single.value)||0):Object.values(ib).reduce((a,b)=>a+b,0),note:sh.querySelector('#ci-note').value.trim()};
       if(ex){Object.assign(ex,rec);saveFin();closeSheet();render();return}
       const ws=weekStart(rec.date);f.checkins=f.checkins.filter(c=>weekStart(c.date)!==ws);f.checkins.push(rec);saveFin();closeSheet();
       const st=f.statId&&statById(f.statId);
       if(st){const before=levelsSnapshot();const day=dayOf(rec.date);day.logs=day.logs||[];
         if(!day.logs.some(l=>l.kind==='checkin')){day.logs.push({id:uid(),kind:'checkin',statId:st.id,title:'money check-in',minutes:0,xp:20,at:Date.now()});saveDay(rec.date)}
-        render();toast(`${em('💰')}check-in saved · +20 ${esc(st.name)} xp`);checkLevelUps(before);return}
-      render();toast(`${em('💰')}check-in saved`);
+        render();toast(`${em('💰')}check-in saved · +20 ${esc(st.name)} xp`);checkLevelUps(before);moneyGoalsCheck();return}
+      render();toast(`${em('💰')}check-in saved`);moneyGoalsCheck();
     };
   });
 }
@@ -1052,26 +1085,72 @@ function editAccount(id){
   });
 }
 function editIncome(id){
-  const f=F(),ex=id?f.income.find(x=>x.id===id):null;
-  const s=ex?clone(ex):{id:uid(),name:'',amount:'',freq:'week'};
-  openSheet(`<h3>${ex?'edit income':'add income'}</h3>
-    <div class="field"><label>source</label><input id="i-name" value="${esc(s.name)}" placeholder="e.g. job, side gig, centrelink"></div>
-    <div class="field"><label>amount (after tax)</label><input type="number" inputmode="decimal" step="0.01" id="i-amt" value="${esc(s.amount)}" style="width:10em"></div>
+  const f=F(),ex=id?f.income.find(x=>x.id===id):null,used=new Set(f.income.map(x=>x.colorIdx));
+  const s=ex?clone(ex):{id:uid(),name:'',emoji:'',amount:'',freq:'week',variable:false,colorIdx:[2,0,6,3,4,5,1,7].find(i=>!used.has(i))??f.income.length%8};
+  const pal=isLight()?PAL_LIGHT:PAL_DARK;
+  openSheet(`<h3>${ex?'edit income stream':'new income stream'}</h3>
+    <div class="field"><label>name</label><div class="row">${emojiOn()?`<input id="i-emoji" value="${esc(s.emoji||'')}" placeholder="💼" maxlength="8" style="width:3.6em;text-align:center">`:''}<input id="i-name" class="grow" value="${esc(s.name)}" placeholder="e.g. wages, side hustle, commissions"></div></div>
+    <div class="field"><label>how steady is it?</label><div class="seg" data-seg="var"><button data-v="0" class="${!s.variable?'on':''}">about the same each time</button><button data-v="1" class="${s.variable?'on':''}">varies week to week</button></div></div>
+    <div class="field"><label id="i-amt-l">${s.variable?'roughly how much, typically (after tax)':'amount (after tax)'}</label><input type="number" inputmode="decimal" step="0.01" id="i-amt" value="${esc(s.amount)}" style="width:10em"></div>
     <div class="field"><label>paid</label><div class="seg" data-seg="freq">${Object.keys(FREQ).map(k=>`<button data-v="${k}" class="${s.freq===k?'on':''}">${FREQ_L[k]}</button>`).join('')}</div></div>
+    <div class="field"><label>colour</label><div class="seg" data-seg="color">${pal.map((c,i)=>`<button data-v="${i}" class="${s.colorIdx===i?'on':''}" aria-label="colour ${i+1}"><i class="sdot" style="background:${c};width:1.1em;height:1.1em;vertical-align:-.2em;margin:0"></i></button>`).join('')}</div></div>
     <div class="acc" id="i-wk"></div>
-    <div class="actions">${ex?'<button class="bk btn danger" id="i-del" style="margin-right:auto">delete</button>':''}<button class="bk btn ghost" id="i-x">cancel</button><button class="bk btn" id="i-save">save</button></div>`,sh=>{
-    const upd=()=>{const w=(Number(sh.querySelector('#i-amt').value)||0)*(FREQ[segVals(sh,'freq')[0]]||1);sh.querySelector('#i-wk').textContent=`= ${money(w,2)} a week`};
-    segBind(sh,'freq',false,upd);sh.querySelector('#i-amt').addEventListener('input',upd);upd();
+    <div class="actions">${ex?'<button class="bk btn danger" id="i-del" style="margin-right:auto">remove</button>':''}<button class="bk btn ghost" id="i-x">cancel</button><button class="bk btn" id="i-save">save</button></div>`,sh=>{
+    const upd=()=>{const v=segVals(sh,'var')[0]==='1';sh.querySelector('#i-amt-l').textContent=v?'roughly how much, typically (after tax)':'amount (after tax)';const w=(Number(sh.querySelector('#i-amt').value)||0)*(FREQ[segVals(sh,'freq')[0]]||1);sh.querySelector('#i-wk').textContent=`= ${v?'about ':''}${money(w,2)} a week`};
+    segBind(sh,'freq',false,upd);segBind(sh,'var',false,upd);segBind(sh,'color',false);sh.querySelector('#i-amt').addEventListener('input',upd);upd();
     sh.querySelector('#i-x').onclick=closeSheet;
     if(!ex)setTimeout(()=>sh.querySelector('#i-name').focus(),50);
-    if(ex)sh.querySelector('#i-del').onclick=()=>{f.income=f.income.filter(x=>x.id!==ex.id);saveFin();closeSheet();render()};
+    if(ex)sh.querySelector('#i-del').onclick=()=>confirmSheet(`remove “${esc(ex.name)}”?<div class="dim" style="font-weight:400;margin-top:6px">past check-ins keep what it earned, so your history stays right.</div>`,'remove',()=>{if(f.checkins.some(c=>c.incomeBy&&c.incomeBy[ex.id]!=null))ex.archived=true;else f.income=f.income.filter(x=>x.id!==ex.id);saveFin();render()});
     sh.querySelector('#i-save').onclick=()=>{
-      const name=sh.querySelector('#i-name').value.trim()||'income';s.name=name;s.amount=Number(sh.querySelector('#i-amt').value)||0;s.freq=segVals(sh,'freq')[0]||'week';
+      const name=sh.querySelector('#i-name').value.trim();if(!name){sh.querySelector('#i-name').focus();return}
+      s.name=name;const ie=sh.querySelector('#i-emoji');s.emoji=ie?ie.value.trim():(s.emoji||'');if(!s.emoji&&emojiOn()){const l=name.toLowerCase();const m=STREAM_EMO.find(([k])=>l.includes(k));s.emoji=m?m[1]:'💵'}
+      s.amount=Number(sh.querySelector('#i-amt').value)||0;s.freq=segVals(sh,'freq')[0]||'week';s.variable=segVals(sh,'var')[0]==='1';s.colorIdx=Number(segVals(sh,'color')[0]??s.colorIdx);
       if(ex)Object.assign(ex,s);else f.income.push(s);saveFin();closeSheet();render()};
   });
 }
+let moneySub=null;
+function incomeStats(rc){
+  const per={};let total=0;
+  for(const c of rc){const ib=ciIncomeBy(c);for(const k in ib){per[k]=(per[k]||0)+Number(ib[k]);total+=Number(ib[k])}}
+  return {per,total,weeks:rc.length};
+}
+function incomeSummaryView(){
+  const f=F(),rc=moneyRangeCheckins(),st=incomeStats(rc),ids=Object.keys(st.per).sort((a,b)=>st.per[b]-st.per[a]);
+  const exp=weeklyIncome(),avg=st.weeks?st.total/st.weeks:0;
+  const live=streams();
+  const rows=[...new Set([...live.map(x=>x.id),...ids])].map(id=>{const x=f.income.find(y=>y.id===id);const got=st.per[id]||0;return {id,x,got,avg:st.weeks?got/st.weeks:0,share:st.total?got/st.total:0,exp:x&&!x.archived?streamWeekly(x):0}}).sort((a,b)=>b.got-a.got||b.exp-a.exp);
+  return `<p style="margin:4px 0 0"><button class="bk" data-msub="">‹ money</button></p>
+  <h2 style="margin-top:8px"><span class="t">${em('💵')}income streams</span><span class="r"><button class="bk" data-incnew>+ add stream</button></span></h2>
+  <div class="filters"><span class="dim">range:</span>${[[4,'1m'],[13,'3m'],[26,'6m'],[52,'1y'],[0,'all']].map(([v,l])=>`<button data-mrange="${v}" class="${moneyRange===v?'on':''}">${l}</button>`).join('')}</div>
+  <div class="kpis" style="margin-top:8px">
+    <div class="kpi"><b>${money(st.total)}</b><span>received · ${st.weeks} check-in${st.weeks===1?'':'s'}</span></div>
+    <div class="kpi"><b>${money(avg)}</b><span>average per week</span></div>
+    <div class="kpi"><b>${money(exp)}</b><span>expected per week now</span></div>
+    <div class="kpi"><b>${live.length}</b><span>active stream${live.length===1?'':'s'}</span></div>
+  </div>
+  ${rc.length?`<div class="chart"><h2><span class="t">weekly income by stream</span></h2><div class="desc">stacked — each colour is one stream, the full bar is that week’s total</div>
+    <div class="legend">${ids.map(id=>{const x=f.income.find(y=>y.id===id);return `<span>${sdotC(id==='_'?css('--dim'):streamColor(x||{},0))}${esc(streamName(id))}</span>`}).join('')}</div>
+    <div class="chart-box" style="height:220px"><canvas id="m-inc2"></canvas></div></div>`:`<div class="empty" style="margin-top:10px">your streams’ history fills in from weekly check-ins.</div>`}
+  <h2><span class="t">breakdown</span><span class="r">${moneyRange?'last '+(moneyRange===4?'month':moneyRange===13?'3 months':moneyRange===26?'6 months':'year'):'all time'}</span></h2>
+  <table class="tt"><thead><tr><th>stream</th><th style="text-align:right">avg/wk</th><th style="text-align:right">total</th></tr></thead><tbody>
+  ${rows.map(r=>`<tr ${r.x&&!r.x.archived?`data-incedit="${r.id}" style="cursor:pointer"`:''}><td>${sdotC(r.id==='_'?css('--dim'):streamColor(r.x||{},0))}${esc(em(r.x&&r.x.emoji))}${esc(streamName(r.id))}${r.x&&r.x.variable?' <span class="dim" style="font-size:.8em">varies</span>':''}${r.x&&r.x.archived?' <span class="dim" style="font-size:.8em">removed</span>':''}
+    <div class="row" style="gap:6px"><span class="pbar" style="flex:1;color:${r.id==='_'?css('--dim'):streamColor(r.x||{},0)}"><i style="width:${(r.share*100).toFixed(1)}%"></i></span><span class="dim" style="font-size:.8em;width:3em;text-align:right">${Math.round(r.share*100)}%</span></div>
+    ${r.exp?`<div class="dim" style="font-size:.78em">expected ${money(r.exp)}/wk${st.weeks&&r.avg?` · ${r.avg>=r.exp?'<span class="good">':'<span class="bad">'}${r.avg>=r.exp?'+':'−'}${money(Math.abs(r.avg-r.exp))}</span> vs actual`:''}</div>`:''}</td>
+    <td class="num">${money(r.avg)}</td><td class="num">${money(r.got)}</td></tr>`).join('')||'<tr><td colspan="3" class="dim">no income streams yet.</td></tr>'}
+  </tbody></table>
+  ${live.length?`<p style="text-align:right;margin:8px 0 0"><b>expected: ${money(exp,2)} a week</b> <span class="dim">· ${money(exp*52)} a year</span></p>`:''}`;
+}
+function drawIncomeStack(el,rc){
+  if(!el||!window.Chart)return;const K=chartKit(),f=F(),labels=rc.map(c=>fmtDate(c.date));
+  const ids=[];for(const c of rc)for(const k in ciIncomeBy(c))if(!ids.includes(k))ids.push(k);
+  ids.sort((a,b)=>(a==='_')-(b==='_'));
+  charts.push(new Chart(el,{type:'bar',data:{labels,datasets:ids.map((id,i)=>{const x=f.income.find(y=>y.id===id);const col=id==='_'?K.dim:streamColor(x||{},i);return {label:streamName(id),data:rc.map(c=>{const v=ciIncomeBy(c)[id];return v==null?0:Number(v)}),backgroundColor:col,borderRadius:K.rad,maxBarThickness:26,stack:'s',borderColor:css('--bg'),borderWidth:{top:2}}})},
+    options:K.base({plugins:{legend:{display:false},tooltip:Object.assign({},K.tip,{filter:c=>c.parsed.y>0,callbacks:{label:c=>` ${c.dataset.label}: ${money(c.parsed.y)}`,footer:items=>'total '+money(items.reduce((a,c)=>a+c.parsed.y,0))}})},
+      scales:{x:Object.assign({stacked:true},K.xs),y:{stacked:true,beginAtZero:true,grid:K.grid,border:K.border,ticks:{maxTicksLimit:5,callback:v=>money(v)}}}})}));
+}
 function moneyRangeCheckins(){const cs=checkins();if(!moneyRange)return cs;const from=addDays(today(),-moneyRange*7);return cs.filter(c=>c.date>=from)}
 function moneyView(){
+  if(moneySub==='income')return incomeSummaryView();
   const f=F(),st=checkinStatus(),cs=checkins(),last=cs[cs.length-1],prev=cs[cs.length-2];
   const live=f.accounts.filter(a=>!a.archived);
   const accRow=a=>{const v=last?last.balances[a.id]:null;return `<div class="task" data-accedit="${a.id}"><span class="cb plain">${sdotC(accColor(a))}</span><div><div class="ttl">${esc(em(a.emoji))}${esc(a.name)}</div><div class="meta"><span>${a.type==='debt'?'owe':'have'}</span></div></div><span class="${a.type==='debt'?'bad':''}" style="font-weight:700;white-space:nowrap">${v!=null?(a.type==='debt'?'−':'')+money(v):'–'}</span></div>`};
@@ -1098,14 +1177,20 @@ function moneyView(){
   ${cs.length?`<div class="filters" style="margin-top:10px"><span class="dim">range:</span>${[[13,'3m'],[26,'6m'],[52,'1y'],[0,'all']].map(([v,l])=>`<button data-mrange="${v}" class="${moneyRange===v?'on':''}">${l}</button>`).join('')}</div>`:''}
   ${rc.length>=1?`
   <div class="chart"><h2><span class="t">net worth</span></h2><div class="desc">what you have minus what you owe, at each check-in</div><div class="chart-box"><canvas id="m-net"></canvas></div></div>
-  <div class="chart"><h2><span class="t">balances by account</span></h2><div class="desc">debts shown as the amount owed</div><div class="legend">${f.accounts.filter(a=>rc.some(c=>c.balances[a.id]!=null)).map(a=>`<span>${sdotC(accColor(a))}${esc(a.name)}</span>`).join('')}</div><div class="chart-box"><canvas id="m-acc"></canvas></div></div>
+  <div class="chart"><h2><span class="t">have vs owe</span></h2><div class="desc">what you have (up) against what you owe (down), with net worth as the line</div>
+    <div class="legend"><span>${sdotC(css('--good'))}have</span><span>${sdotC(css('--bad'))}owe</span><span><i class="sdot" style="background:${css('--fg')};height:3px;vertical-align:.2em"></i>net worth</span></div><div class="chart-box" style="height:220px"><canvas id="m-ho"></canvas></div></div>
+  <div class="chart"><h2><span class="t">balances by account</span></h2><div class="desc">accounts you owe on sit below the zero line, so the further down, the bigger the debt</div>
+    ${(()=>{const used=f.accounts.filter(a=>rc.some(c=>c.balances[a.id]!=null));const h=used.filter(a=>a.type!=='debt'),o=used.filter(a=>a.type==='debt');return `<div class="legend">${h.length?`<span class="dim">have:</span>${h.map(a=>`<span>${sdotC(accColor(a))}${esc(a.name)}</span>`).join('')}`:''}</div>${o.length?`<div class="legend"><span class="dim">owe:</span>${o.map(a=>`<span><i class="sdot" style="background:transparent;border:2px dashed ${accColor(a)};box-sizing:border-box"></i>${esc(a.name)}</span>`).join('')}</div>`:''}`})()}
+    <div class="chart-box" style="height:240px"><canvas id="m-acc"></canvas></div></div>
   ${rc.length>=2?`<div class="chart"><h2><span class="t">week-to-week change</span></h2><div class="desc">how much net worth moved between check-ins</div><div class="chart-box" style="height:180px"><canvas id="m-chg"></canvas></div></div>`:''}
-  <div class="chart"><h2><span class="t">weekly income</span></h2><div class="desc">as recorded at each check-in</div><div class="chart-box" style="height:160px"><canvas id="m-inc"></canvas></div></div>`:(live.length?`<div class="empty" style="margin-top:10px">graphs appear after your first check-in.</div>`:'')}
+  <div class="chart"><h2><span class="t">weekly income</span><span class="r"><button class="bk" data-msub="income" style="font-size:.85em">by stream ›</button></span></h2><div class="desc">at each check-in, coloured by income stream</div><div class="chart-box" style="height:180px"><canvas id="m-inc"></canvas></div></div>`:(live.length?`<div class="empty" style="margin-top:10px">graphs appear after your first check-in.</div>`:'')}
+  <h2><span class="t">${em('🎯')}money goals</span><span class="r"><button class="bk" data-mgnew>+ add</button></span></h2>
+  ${goals().filter(g=>g.measure==='money'&&g.status==='active').map(goalCard).join('')||`<div class="empty">e.g. “reach $10,000 net worth by next december” or “pay off the credit card”. they update themselves from your check-ins.</div>`}
   <h2><span class="t">accounts</span><span class="r"><button class="bk" data-accnew>+ add</button></span></h2>
   <div class="list">${live.length?live.sort((a,b)=>(a.type>b.type?1:-1)).map(accRow).join(''):'<div class="empty">no accounts yet.</div>'}</div>
-  <h2><span class="t">weekly income</span><span class="r"><button class="bk" data-incnew>+ add</button></span></h2>
-  <div class="list">${f.income.map(s=>`<div class="task" data-incedit="${s.id}"><span class="cb plain">${emojiOn()?'💵':'$'}</span><div><div class="ttl">${esc(s.name)}</div><div class="meta"><span>${money(s.amount,2)} ${FREQ_L[s.freq]}</span></div></div><span style="font-weight:700;white-space:nowrap">${money((s.amount||0)*(FREQ[s.freq]||1))}/wk</span></div>`).join('')||'<div class="empty">no income added yet.</div>'}</div>
-  ${f.income.length?`<p style="text-align:right;margin:4px 0 0"><b>total: ${money(inc,2)} a week</b> <span class="dim">· ${money(inc*52)} a year</span></p>`:''}
+  <h2><span class="t">income streams</span><span class="r"><button class="bk" data-incnew>+ add</button></span></h2>
+  <div class="list">${streams().map((x,i)=>`<div class="task" data-incedit="${x.id}"><span class="cb plain">${sdotC(streamColor(x,i))}</span><div><div class="ttl">${esc(em(x.emoji))}${esc(x.name)}</div><div class="meta"><span>${x.variable?'varies · about ':''}${money(x.amount,2)} ${FREQ_L[x.freq]}</span></div></div><span style="font-weight:700;white-space:nowrap">${money(streamWeekly(x))}/wk</span></div>`).join('')||'<div class="empty">add each way money comes in — wages, a side hustle, commissions — to see how each one tracks.</div>'}</div>
+  ${streams().length?`<div class="row" style="justify-content:space-between;margin-top:6px"><button class="bk" data-msub="income">${em('📊')}income summary ›</button><span><b>${money(inc,2)}/wk</b> <span class="dim">· ${money(inc*52)}/yr</span></span></div>`:''}
   ${cs.length?`<h2><span class="t">check-in history</span><span class="r">${cs.length}</span></h2>
   <table class="tt"><thead><tr><th>date</th><th style="text-align:right">net worth</th><th style="text-align:right">change</th></tr></thead><tbody>${cs.slice().reverse().slice(0,showAllCheckins?999:8).map((c,i,arr)=>{const n=netOf(c).net;const p=cs[cs.indexOf(c)-1];const ch=p?n-netOf(p).net:null;return `<tr data-ciedit="${c.id}" style="cursor:pointer"><td>${fmtDate(c.date)} ${parse(c.date).getFullYear()!==new Date().getFullYear()?parse(c.date).getFullYear():''}${c.note?`<div class="dim" style="font-size:.8em">${esc(c.note)}</div>`:''}</td><td class="num">${money(n)}</td><td class="num ${ch==null?'':ch>=0?'good':'bad'}">${ch==null?'–':signed(ch)}</td></tr>`}).join('')}</tbody></table>
   ${cs.length>8&&!showAllCheckins?`<p><button class="bk" data-ciall>show all</button></p>`:''}`:''}
@@ -1133,20 +1218,31 @@ function drawMoneyCharts(){
   const mtip=Object.assign({},K.tip,{callbacks:{label:c=>` ${c.dataset.label}: ${money(c.parsed.y)}`}});
   charts.push(new Chart($('#m-net'),{type:'line',data:{labels,datasets:[{label:'net worth',data:rc.map(c=>netOf(c).net),borderColor:K.heat,backgroundColor:`color-mix(in srgb, ${K.heat} 16%, transparent)`,fill:true,borderWidth:2,pointRadius:rc.length<30?3:0,pointHoverRadius:5,tension:.25}]},options:K.base({plugins:{legend:{display:false},tooltip:mtip},scales:{x:K.xs,y:yM}})}));
   const accs=f.accounts.filter(a=>rc.some(c=>c.balances[a.id]!=null));
-  charts.push(new Chart($('#m-acc'),{type:'line',data:{labels,datasets:accs.map(a=>({label:a.name,data:rc.map(c=>c.balances[a.id]??null),borderColor:accColor(a),backgroundColor:accColor(a),borderWidth:2,borderDash:a.type==='debt'?[5,4]:[],pointRadius:rc.length<30?2.5:0,pointHoverRadius:5,tension:.25,spanGaps:true}))},options:K.base({plugins:{legend:{display:false},tooltip:mtip},scales:{x:K.xs,y:Object.assign({beginAtZero:true},yM)}})}));
+  const zeroLine={id:'zero',afterDraw(ch){const y=ch.scales.y;if(!y)return;const z=y.getPixelForValue(0);if(z<y.top||z>y.bottom)return;const c=ch.ctx;c.save();c.strokeStyle=K.fg;c.globalAlpha=.55;c.lineWidth=1.5;c.beginPath();c.moveTo(ch.chartArea.left,z);c.lineTo(ch.chartArea.right,z);c.stroke();c.restore()}};
+  const debtZone={id:'debtzone',beforeDraw(ch){const y=ch.scales.y;if(!y)return;const z=Math.max(y.top,Math.min(y.bottom,y.getPixelForValue(0)));if(z>=y.bottom)return;const c=ch.ctx;c.save();c.fillStyle=K.bad;c.globalAlpha=.06;c.fillRect(ch.chartArea.left,z,ch.chartArea.right-ch.chartArea.left,y.bottom-z);c.restore()}};
+  const owe=c=>{let d=0,any=false;for(const a of f.accounts)if(a.type==='debt'&&c.balances[a.id]!=null){d+=Number(c.balances[a.id]);any=true}return d};
+  charts.push(new Chart($('#m-ho'),{data:{labels,datasets:[
+    {type:'bar',label:'have',data:rc.map(c=>netOf(c).assets),backgroundColor:K.good,borderRadius:K.rad,maxBarThickness:26,stack:'s',order:2},
+    {type:'bar',label:'owe',data:rc.map(c=>-netOf(c).debts),backgroundColor:K.bad,borderRadius:K.rad,maxBarThickness:26,stack:'s',order:2},
+    {type:'line',label:'net worth',data:rc.map(c=>netOf(c).net),borderColor:K.fg,backgroundColor:K.fg,borderWidth:2,pointRadius:rc.length<30?2.5:0,pointHoverRadius:5,tension:.25,order:1}]},
+    options:K.base({plugins:{legend:{display:false},tooltip:Object.assign({},K.tip,{callbacks:{label:c=>c.dataset.label==='owe'?` owe: ${money(-c.parsed.y)}`:` ${c.dataset.label}: ${money(c.parsed.y)}`}})},
+      scales:{x:Object.assign({stacked:true},K.xs),y:Object.assign({stacked:true},yM,{ticks:{maxTicksLimit:6,callback:v=>v<0?'−'+money(-v):money(v)}})}}),plugins:[zeroLine]}));
+  charts.push(new Chart($('#m-acc'),{type:'line',data:{labels,datasets:accs.map(a=>{const dbt=a.type==='debt';return {label:a.name,debt:dbt,data:rc.map(c=>c.balances[a.id]==null?null:(dbt?-1:1)*Number(c.balances[a.id])),borderColor:accColor(a),backgroundColor:accColor(a),borderWidth:dbt?2.5:2,borderDash:dbt?[6,4]:[],pointStyle:dbt?'rectRot':'circle',pointRadius:rc.length<30?(dbt?3.5:2.5):0,pointHoverRadius:5,tension:.25,spanGaps:true}})},
+    options:K.base({plugins:{legend:{display:false},tooltip:Object.assign({},K.tip,{callbacks:{label:c=>c.dataset.debt?` ${c.dataset.label} (owe): ${money(-c.parsed.y)}`:` ${c.dataset.label}: ${money(c.parsed.y)}`}})},
+      scales:{x:K.xs,y:Object.assign({},yM,{ticks:{maxTicksLimit:6,callback:v=>v<0?'−'+money(-v):money(v)}})}}),plugins:[zeroLine,debtZone]}));
   if($('#m-chg')){const all=checkins();const ch=rc.map(c=>{const i=all.indexOf(c);return i>0?netOf(c).net-netOf(all[i-1]).net:null});
     charts.push(new Chart($('#m-chg'),{type:'bar',data:{labels,datasets:[{label:'change',data:ch,backgroundColor:ch.map(v=>v==null?K.line:v>=0?K.good:K.bad),borderRadius:K.rad,maxBarThickness:22}]},options:K.base({interaction:{mode:'nearest',intersect:true},plugins:{legend:{display:false},tooltip:Object.assign({},K.tip,{callbacks:{label:c=>' '+signed(c.parsed.y)}})},scales:{x:K.xs,y:{grid:K.grid,border:K.border,ticks:{maxTicksLimit:5,callback:v=>money(v)}}}})}))}
-  charts.push(new Chart($('#m-inc'),{type:'line',data:{labels,datasets:[{label:'weekly income',data:rc.map(c=>c.income),borderColor:K.acc,backgroundColor:K.acc,stepped:true,borderWidth:2,pointRadius:0,pointHoverRadius:5}]},options:K.base({plugins:{legend:{display:false},tooltip:mtip},scales:{x:K.xs,y:Object.assign({beginAtZero:true},yM)}})}));
+  drawIncomeStack($('#m-inc'),rc);
 }
 
 /* ============ goals ============ */
 let goalSel=null;
 function goals(){return S.goals||(S.goals=[])}
 function goalById(id){return goals().find(g=>g.id===id)}
-function gCurrent(g){const h=g.history||[];return h.length?Number(h[h.length-1].value):Number(g.start)||0}
+function gCurrent(g){if(g.measure==='money')return moneyNow(g.metric);const h=g.history||[];return h.length?Number(h[h.length-1].value):Number(g.start)||0}
 function subById(g,sid){return (g.subs||[]).find(s=>s.id===sid)}
 function subDone(g,s){if(s.taskId){const t=taskById(s.taskId);if(t)return onceDoneDate(t)}return s.doneOn||null}
-function isNumGoal(g){return g.measure==='number'&&g.target!==''&&g.target!=null&&Number(g.target)!==Number(g.start||0)}
+function isNumGoal(g){return (g.measure==='number'||g.measure==='money')&&g.target!==''&&g.target!=null&&Number(g.target)!==Number(g.start||0)}
 function gProgress(g){
   if(g.status==='done')return 1;
   if(isNumGoal(g))return Math.max(0,Math.min(1,(gCurrent(g)-Number(g.start||0))/(Number(g.target)-Number(g.start||0))));
@@ -1207,7 +1303,9 @@ function editGoal(id){
     <div class="field"><label>the goal</label><div class="row">${emojiOn()?`<input id="g-emoji" value="${esc(g.emoji||'')}" placeholder="🎯" maxlength="8" style="width:3.6em;text-align:center">`:''}<input id="g-title" class="grow" value="${esc(g.title)}" placeholder="e.g. hold a 10-minute conversation in japanese"></div></div>
     <div class="field">${q('S','specific','what exactly will be different?')}<textarea id="g-spec" rows="2" style="min-height:0" placeholder="e.g. chat with my tutor for 10 min about my week, without switching to english">${esc(g.specific)}</textarea></div>
     <div class="field">${q('M','measurable','how will you know you got there?')}
-      <div class="seg" data-seg="measure"><button data-v="milestones" class="${g.measure!=='number'?'on':''}">by finishing steps</button><button data-v="number" class="${g.measure==='number'?'on':''}">by a number</button></div>
+      <div class="seg" data-seg="measure"><button data-v="milestones" class="${g.measure!=='number'?'on':''}">by finishing steps</button><button data-v="number" class="${g.measure==='number'?'on':''}">by a number</button><button data-v="money" class="${g.measure==='money'?'on':''}">by money (check-ins)</button></div>
+      <div id="g-money" style="margin-top:8px"><div class="seg" data-seg="metric">${[['net','net worth'],['assets','what you have'],['debts','what you owe'],...F().accounts.filter(a=>!a.archived).map(a=>['acc:'+a.id,a.name])].map(([v,l])=>`<button data-v="${v}" class="${(g.metric||'net')===v?'on':''}">${esc(l)}</button>`).join('')}</div>
+        <div class="row" style="margin-top:6px"><span class="dim">target</span><input type="number" step="any" id="g-mt" value="${g.measure==='money'?esc(g.target):''}" style="width:8em"><span class="dim" id="g-mnow"></span></div></div>
       <div id="g-num" class="row" style="margin-top:8px;flex-wrap:wrap"><span class="dim">from</span><input type="number" step="any" id="g-start" value="${esc(g.start)}" placeholder="0" style="width:6em"><span class="dim">to</span><input type="number" step="any" id="g-target" value="${esc(g.target)}" placeholder="100" style="width:6em"><input id="g-unit" value="${esc(g.unit)}" placeholder="unit: kg, $, km, words" style="width:11em"></div>
       ${!ex||!(g.subs||[]).length?`<div id="g-auto" style="margin-top:8px"><span class="dim" style="font-size:.85em">auto-create checkpoints:</span><div class="seg" data-seg="auto" style="margin-top:4px"><button data-v="0" class="on">none</button><button data-v="3">3</button><button data-v="4">4</button><button data-v="6">6</button></div></div>`:''}
     </div>
@@ -1218,11 +1316,11 @@ function editGoal(id){
     <div class="field"><div id="g-smart"></div></div>
     <div class="actions"><button class="bk btn ghost" id="g-x">cancel</button><button class="bk btn" id="g-save">save goal</button></div>`,sh=>{
     const read=()=>{g.title=sh.querySelector('#g-title').value.trim();const ge=sh.querySelector('#g-emoji');if(ge)g.emoji=ge.value.trim();
-      g.specific=sh.querySelector('#g-spec').value;g.measure=segVals(sh,'measure')[0];g.start=sh.querySelector('#g-start').value;g.target=sh.querySelector('#g-target').value;g.unit=sh.querySelector('#g-unit').value.trim();
+      g.specific=sh.querySelector('#g-spec').value;g.measure=segVals(sh,'measure')[0];if(g.measure==='money'){const m=segVals(sh,'metric')[0]||'net';if(!ex||ex.measure!=='money'||ex.metric!==m)g.start=moneyNow(m);g.metric=m;g.target=sh.querySelector('#g-mt').value;g.unit='$'}else{g.start=sh.querySelector('#g-start').value;g.target=sh.querySelector('#g-target').value;g.unit=sh.querySelector('#g-unit').value.trim()}
       g.achievable=sh.querySelector('#g-ach').value;g.relevant=sh.querySelector('#g-rel').value;g.stats=segVals(sh,'stats');g.deadline=sh.querySelector('#g-dl').value};
-    const sync=()=>{read();const num=g.measure==='number';sh.querySelector('#g-num').classList.toggle('hidden',!num);const au=sh.querySelector('#g-auto');if(au)au.classList.toggle('hidden',!num);
+    const sync=()=>{read();const num=g.measure==='number';sh.querySelector('#g-num').classList.toggle('hidden',!num);sh.querySelector('#g-money').classList.toggle('hidden',g.measure!=='money');sh.querySelector('#g-mnow').textContent=g.measure==='money'?'now '+money(moneyNow(g.metric)):'';const au=sh.querySelector('#g-auto');if(au)au.classList.toggle('hidden',!(num||g.measure==='money'));
       const s=smartOf(g);sh.querySelector('#g-smart').innerHTML=`${smartBadge(g)} <span class="dim" style="font-size:.85em">${Object.values(s).every(Boolean)?'nice — fully SMART.':'missing: '+Object.keys(s).filter(k=>!s[k]).map(k=>SMART_L[k]).join(', ')+(g.measure!=='number'&&!s.M?' (add steps after saving)':'')}</span>`};
-    segBind(sh,'measure',false,sync);segBind(sh,'stats',true);segBind(sh,'auto',false);
+    segBind(sh,'measure',false,sync);segBind(sh,'metric',false,sync);segBind(sh,'stats',true);segBind(sh,'auto',false);
     sh.querySelectorAll('[data-seg="quick"] button').forEach(b=>b.addEventListener('click',()=>{sh.querySelector('#g-dl').value=addDaysMonths(Number(b.dataset.v));sync()}));
     sh.querySelectorAll('input,textarea').forEach(i=>i.addEventListener('input',sync));sync();
     sh.querySelector('#g-x').onclick=closeSheet;
@@ -1233,7 +1331,7 @@ function editGoal(id){
       const n=Number(segVals(sh,'auto')[0]||0);
       if(n&&isNumGoal(g)&&!(g.subs||[]).length){
         const s0=Number(g.start||0),t0=Number(g.target),span=g.deadline?dayDiff(today(),g.deadline):0;
-        const fu=v=>/^\$|dollar|aud|usd/i.test(g.unit||'')?money(v):`${fmtNum(v)} ${g.unit}`.trim();for(let i=1;i<=n;i++){const v=Math.round((s0+(t0-s0)*i/n)*100)/100;g.subs.push({id:uid(),title:i===n?`reach the target: ${fu(v)}`:`checkpoint ${i}: reach ${fu(v)}`,value:v,due:span>0?addDays(today(),Math.round(span*i/n)):'',doneOn:null})}
+        const fu=v=>g.measure==='money'||/^\$|dollar|aud|usd/i.test(g.unit||'')?money(v):`${fmtNum(v)} ${g.unit}`.trim();for(let i=1;i<=n;i++){const v=Math.round((s0+(t0-s0)*i/n)*100)/100;g.subs.push({id:uid(),title:i===n?`reach the target: ${fu(v)}`:`checkpoint ${i}: reach ${fu(v)}`,value:v,due:span>0?addDays(today(),Math.round(span*i/n)):'',doneOn:null})}
       }
       if(ex)Object.assign(ex,g);else goals().push(g);saveState();closeSheet();goalSel=g.id;tab='goals';render()};
   });
@@ -1267,7 +1365,7 @@ function subsDueSoon(days){
 }
 function subItem(g,s,inDetail){
   const dd=subDone(g,s),od=!dd&&s.due&&s.due<today();
-  const meta=[inDetail?'':`<span>${esc(em(g.emoji))}${esc(g.title)}</span>`,s.due?`<span class="${od?'bad':''}">${od?'overdue · ':''}${fmtDate(s.due)}</span>`:'',s.value!==''&&s.value!=null?`<span>at ${fmtNum(s.value)} ${esc(g.unit||'')}</span>`:'',s.taskId&&taskById(s.taskId)?`<span>${em('📌')}on task list</span>`:''].join('');
+  const meta=[inDetail?'':`<span>${esc(em(g.emoji))}${esc(g.title)}</span>`,s.due?`<span class="${od?'bad':''}">${od?'overdue · ':''}${fmtDate(s.due)}</span>`:'',s.value!==''&&s.value!=null?`<span>at ${g.measure==='money'?money(Number(s.value)):fmtNum(s.value)+' '+esc(g.unit||'')}</span>`:'',s.taskId&&taskById(s.taskId)?`<span>${em('📌')}on task list</span>`:''].join('');
   return `<div class="task ${dd?'done':''}" data-subtoggle="${g.id}|${s.id}"><span class="cb">${skin()==='terminal'?(dd?'[x]':'[ ]'):''}</span><div><div class="ttl">${esc(s.title)}</div><div class="meta">${meta}</div></div><button class="bk edit" data-subedit="${g.id}|${s.id}" aria-label="edit">${skin()==='terminal'?'…':'⋯'}</button></div>`;
 }
 function goalStepsSection(){
@@ -1301,17 +1399,17 @@ function goalDetail(g){
   <div class="box">
     <div class="row" style="justify-content:space-between"><b style="font-size:1.3em">${Math.round(p*100)}%</b><span class="${pace.cls}" style="font-weight:700">${pace.label}</span></div>
     <div class="meter acc">${meter(p,28)}</div>
-    <div class="dim" style="font-size:.85em">${num?`${fmtNum(gCurrent(g))} of ${fmtNum(g.target)} ${esc(g.unit||'')} (started at ${fmtNum(g.start||0)}) · `:''}${g.deadline?`deadline ${fmtDate(g.deadline,true)} · ${daysLeftTxt(g)}`:'no deadline'}</div>
-    ${num&&g.status==='active'?`<p style="margin:10px 0 0"><button class="bk btn" data-gprog="${g.id}">${em('📍')}update progress</button></p>`:''}
+    <div class="dim" style="font-size:.85em">${num?(g.measure==='money'?`${metricLabel(g.metric)}: ${money(gCurrent(g))} of ${money(Number(g.target))} (started at ${money(Number(g.start||0))}) · `:`${fmtNum(gCurrent(g))} of ${fmtNum(g.target)} ${esc(g.unit||'')} (started at ${fmtNum(g.start||0)}) · `):''}${g.deadline?`deadline ${fmtDate(g.deadline,true)} · ${daysLeftTxt(g)}`:'no deadline'}</div>
+    ${g.measure==='money'?`<p class="dim" style="font-size:.85em;margin:8px 0 0">${em('💰')}updates itself from your weekly money check-ins.</p>`:''}${num&&g.status==='active'&&g.measure!=='money'?`<p style="margin:10px 0 0"><button class="bk btn" data-gprog="${g.id}">${em('📍')}update progress</button></p>`:''}
   </div>
-  ${num&&(g.history||[]).length?`<div class="chart"><h2><span class="t">progress</span></h2><div class="desc">your updates vs. a steady pace to the deadline (dashed)</div><div class="chart-box"><canvas id="g-chart"></canvas></div></div>`:''}
+  ${num&&gHistory(g).length?`<div class="chart"><h2><span class="t">progress</span></h2><div class="desc">your updates vs. a steady pace to the deadline (dashed)</div><div class="chart-box"><canvas id="g-chart"></canvas></div></div>`:''}
   <h2><span class="t">steps</span><span class="r"><button class="bk" data-subnew="${g.id}">+ add step</button></span></h2>
   <div class="list">${subs.length?subs.map(s=>subItem(g,s,true)+(subDone(g,s)||(s.taskId&&taskById(s.taskId))?'':`<div style="text-align:right;margin:-4px 0 8px"><button class="bk" data-subtoday="${g.id}|${s.id}" style="font-size:.85em">→ put on today’s list</button></div>`)).join(''):`<div class="empty">break it down: what are 3–5 smaller steps, each with a date?</div>`}</div>
   ${linked.length?`<h2><span class="t">habits feeding this goal</span></h2><div class="list">${linked.map(t=>{const r=rate(t),st=taskStreak(t,today());return `<div class="task" data-edit="${t.id}"><span class="cb plain">↻</span><div><div class="ttl">${esc(em(t.emoji))}${esc(t.title)}</div><div class="meta"><span>${esc(recurLabel(t))}</span>${r!=null?`<span>${Math.round(r*100)}% last 30 days</span>`:''}${st>=2?`<span class="acc">streak ${st}</span>`:''}</div></div></div>`}).join('')}</div>`:`<p class="dim" style="font-size:.85em">tip: link a recurring task to this goal (edit the task → “part of goal”) to see your consistency here.</p>`}
   <h2><span class="t">the SMART breakdown</span></h2>
   <div class="box smart-box">
     ${row('S',esc(g.specific))}
-    ${row('M',num?`from ${fmtNum(g.start||0)} to ${fmtNum(g.target)} ${esc(g.unit||'')}`:(g.subs||[]).length?`finish all ${(g.subs||[]).length} steps`:'')}
+    ${row('M',num?(g.measure==='money'?`${metricLabel(g.metric)} from ${money(Number(g.start||0))} to ${money(Number(g.target))}, tracked by check-ins`:`from ${fmtNum(g.start||0)} to ${fmtNum(g.target)} ${esc(g.unit||'')}`):(g.subs||[]).length?`finish all ${(g.subs||[]).length} steps`:'')}
     ${row('A',esc(g.achievable))}
     ${row('R',esc(g.relevant)+((g.stats||[]).length?`<div style="font-size:.85em;margin-top:2px">${statChips(g.stats)}</div>`:''))}
     ${row('T',g.deadline?fmtDate(g.deadline,true)+' '+parse(g.deadline).getFullYear():'')}
@@ -1323,7 +1421,7 @@ function goalDetail(g){
 }
 function drawGoalChart(){
   const el=$('#g-chart');if(!el||!window.Chart)return;const g=goalById(goalSel);if(!g)return;
-  const K=chartKit(),h=(g.history||[]).slice().sort((a,b)=>a.date<b.date?-1:1);
+  const K=chartKit(),h=gHistory(g).slice().sort((a,b)=>a.date<b.date?-1:1);
   const start=[g.created,h[0]&&h[0].date].filter(Boolean).sort()[0]||today();
   const X=d=>dayDiff(start,d),s0=Number(g.start||0);
   const actual=[...(h.some(x=>x.date===start)?[]:[{x:0,y:s0}]),...h.map(x=>({x:X(x.date),y:Number(x.value)}))];
@@ -1340,8 +1438,8 @@ function goalDueOn(d){const out=[];for(const g of goals()){if(g.status!=='active
 /* ============ more ============ */
 let moreTab='tasks';
 function moreView(){
-  const inner=moreTab==='cal'?calView():moreTab==='stats'?statsView():moreTab==='settings'?settingsView():tasksView();
-  return `<div class="filters" style="margin:2px 0 6px">${[['cal','📅','calendar'],['tasks','🗂️','tasks'],['stats','🛡️','stats'],['settings','⚙️','settings']].map(([k,e,l])=>`<button data-more="${k}" class="${moreTab===k?'on':''}">${em(e)}${l}</button>`).join('')}</div>${inner}`;
+  const inner=moreTab==='data'?dataView():moreTab==='cal'?calView():moreTab==='stats'?statsView():moreTab==='settings'?settingsView():tasksView();
+  return `<div class="filters" style="margin:2px 0 6px">${[['cal','📅','calendar'],['tasks','🗂️','tasks'],['data','📈','data'],['stats','🛡️','stats'],['settings','⚙️','settings']].map(([k,e,l])=>`<button data-more="${k}" class="${moreTab===k?'on':''}">${em(e)}${l}</button>`).join('')}</div>${inner}`;
 }
 
 /* ============ summary ============ */
@@ -1373,6 +1471,17 @@ function summaryInner(){
   const goalsBody=act.length?act.slice(0,3).map(g=>{const p=gProgress(g),pc=gPace(g);return `<div data-gopen="${g.id}" style="cursor:pointer;padding:6px 0;border-bottom:1px solid var(--line)"><div class="row" style="justify-content:space-between"><span style="font-weight:600;overflow-wrap:anywhere">${esc(em(g.emoji))}${esc(g.title)}</span><span class="${pc.cls}" style="font-size:.8em;white-space:nowrap">${pc.label}</span></div><div class="row"><span class="meter acc grow">${meter(p,16)}</span><span style="font-size:.85em">${Math.round(p*100)}%</span></div>${g.deadline?`<div class="dim" style="font-size:.8em">${daysLeftTxt(g)}</div>`:''}</div>`}).join('')+`<div class="dim" style="font-size:.85em;margin-top:6px">${act.length>3?`+${act.length-3} more goal${act.length-3>1?'s':''} · `:''}${soon} step${soon===1?'':'s'} due this week</div>`
     :`<div class="dim" style="font-size:.9em">no active goals. <button class="bk" data-gnew>+ make one</button></div>`;
   // stats
+  const wss=allSessions().filter(x=>x.status==='done');const wkDoneW=wss.filter(x=>x.date>=ws&&x.date<=t);
+  let wkSched=0;const upcoming=[];for(let i=0;i<7;i++){const d=addDays(ws,i);for(const o of dayTasks(d))if(o.t.workoutId){wkSched++;if(d>=t&&!o.done)upcoming.push({d,t:o.t})}}
+  const lastW=wss.sort((a,b)=>b.startedAt-a.startedAt)[0];const wact=activeSession();const nx=upcoming[0];
+  const wkTime=wkDoneW.reduce((a,x)=>a+(x.endedAt-x.startedAt)/1000,0),wkVol=wkDoneW.reduce((a,x)=>a+sessVolume(x),0);
+  const workoutBody=wact?`<div class="row"><div class="grow"><b>${esc(em(wact.emoji))}${esc(wact.name)}</b> in progress <span class="dim" data-tick data-acc="0" data-run="${wact.startedAt}">${fmtDur((Date.now()-wact.startedAt)/1000)}</span></div><button class="bk btn" data-wresume>resume</button></div>`
+    :!workouts().length&&!wss.length?`<div class="dim" style="font-size:.9em">no workouts yet. <button class="bk" data-tab="workouts">set one up</button></div>`
+    :`<div class="row"><span class="meter acc grow">${meter(wkSched?Math.min(1,wkDoneW.length/wkSched):0,16)}</span><b>${wkDoneW.length}${wkSched?'/'+wkSched:''}</b></div>
+      <div class="dim" style="font-size:.85em;margin-top:2px">this week${wkSched?' (done / scheduled)':''}${wkTime?` · ${fmtDur(wkTime)} total`:''}${wkVol?` · ${Math.round(wkVol).toLocaleString()} kg lifted`:''}</div>
+      <div class="kv" style="margin-top:8px;font-size:.88em"><dt>next</dt><dd>${nx?`${esc(em(nx.t.emoji))}${esc(nx.t.title)} · ${nx.d===t?'<span class="acc">today</span>':fmtDate(nx.d,true)}`:'<span class="dim">nothing scheduled</span>'}</dd>
+      <dt>last</dt><dd>${lastW?`${esc(lastW.name)} · ${fmtDate(lastW.date)} · ${fmtDur((lastW.endedAt-lastW.startedAt)/1000)}`:'<span class="dim">—</span>'}</dd></div>
+      ${nx&&nx.d===t?`<p style="margin:8px 0 0"><button class="bk btn" data-wstart="${nx.t.id}|${t}">▶ start ${esc(nx.t.title)}</button></p>`:''}`;
   const statsBody=`<div class="row" style="font-size:.9em"><span>${em('⭐')}player lv ${pl.lvl}</span><span class="meter acc grow">${meter(pl.pct,14)}</span></div>
     ${S.stats.map(s=>{const li=levelInfo(e.xp[s.id]||0,STAT_BASE),stt=e.status[s.id];const warn=stt.kind==='decaying'?`<span class="bad" style="font-size:.78em">decaying</span>`:stt.kind==='tonight'?`<span class="acc" style="font-size:.78em">decays tomorrow</span>`:'';
       return `<div class="row" style="font-size:.88em;margin-top:4px"><span style="width:8.5em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sdot(s)}${esc(em(s.emoji))}${esc(s.name)}</span><span style="width:3.2em">lv ${li.lvl}</span><span class="meter grow" style="color:${statColor(s)}">${meter(li.pct,10)}</span>${warn}</div>`}).join('')}`;
@@ -1382,6 +1491,7 @@ function summaryInner(){
     ${card(`${em('✅')}today`,'today',todayBody)}
     ${card(`${em('💰')}money`,'money',moneyBody)}
     ${card(`${em('🎯')}key goals`,'goals',goalsBody)}
+    ${card(`${em('🏋️')}workouts`,'workouts',workoutBody)}
     ${card(`${em('🛡️')}stats`,'stats',statsBody)}
     ${card(`${em('📆')}this week so far`,'data',weekBody)}
   </div>`;
@@ -1392,23 +1502,326 @@ function drawSummaryCharts(){
     options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{display:false},tooltip:{enabled:false}},scales:{x:{display:false},y:{display:false}}}}));
 }
 
+/* ============ workouts ============ */
+let wkSel=null, wkProgEx=null;
+function workouts(){return S.workouts||(S.workouts=[])}
+function wkById(id){return workouts().find(w=>w.id===id)}
+function fmtDur(s){s=Math.max(0,Math.floor(s));const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return h?`${h}:${pad(m)}:${pad(x)}`:`${m}:${pad(x)}`}
+function exSummary(e){if(e.kind==='cardio')return `${esc(e.name)}${e.minutes?` ${e.minutes} min`:''}`;return `${esc(e.name)} ${e.sets||0}×${e.reps||0}${e.weight!==''&&e.weight!=null?` @ ${fmtNum(e.weight)}${esc(e.unit||'kg')}`:''}`}
+function wkSummary(w){return (w.exercises||[]).map(exSummary).join(' · ')}
+function allSessions(){const out=[];for(const d of Object.keys(DAYS).sort()){const ss=DAYS[d].sessions||{};for(const id in ss)out.push(ss[id])}return out}
+function activeSession(){const a=S.activeSession;if(!a)return null;const s=DAYS[a.date]&&DAYS[a.date].sessions&&DAYS[a.date].sessions[a.id];return s&&s.status==='active'?s:null}
+function cardioSecs(c){return (c.acc||0)+(c.runStart?Math.floor((Date.now()-c.runStart)/1000):0)}
+function sessVolume(s){let v=0;for(const e of s.exercises)if(e.kind!=='cardio')for(const x of e.sets)if(x.done)v+=(Number(x.reps)||0)*(Number(x.weight)||0);return v}
+function sessSets(s){let d=0,t=0;for(const e of s.exercises)if(e.kind!=='cardio')for(const x of e.sets){t++;if(x.done)d++}return {d,t}}
+function sessCardio(s){let t=0;for(const e of s.exercises)if(e.kind==='cardio')t+=cardioSecs(e.cardio||{});return t}
+function routineLabel(w){const t=w.taskId&&taskById(w.taskId);return t&&!t.archivedOn?recurLabel(t):'not scheduled'}
+function startWorkout(wid,taskId,date){
+  const cur=activeSession();
+  if(cur){if(cur.workoutId===wid&&cur.date===date){tab='workout';render();return}
+    confirmSheet(`you already have <b>${esc(cur.name)}</b> going.<div class="dim" style="font-weight:400;margin-top:6px">open it, or discard it and start this one?</div>`,'discard & start new',()=>{cur.status='discarded';saveDay(cur.date);S.activeSession=null;startWorkout(wid,taskId,date)});
+    const sh=$('.sheet');if(sh){const b=document.createElement('button');b.className='bk btn';b.textContent='open current';b.onclick=()=>{closeSheet();tab='workout';render()};sh.querySelector('.actions').prepend(b)}
+    return}
+  const w=wkById(wid);if(!w){toast('that workout was deleted');return}
+  const s={id:uid(),workoutId:w.id,name:w.name,emoji:w.emoji||'',taskId:taskId||null,date:date||today(),startedAt:Date.now(),endedAt:null,status:'active',lastSetAt:null,
+    exercises:(w.exercises||[]).map(e=>({id:uid(),srcId:e.id,name:e.name,kind:e.kind||'strength',unit:e.unit||'kg',minutes:e.minutes||'',
+      sets:e.kind==='cardio'?[]:Array.from({length:Math.max(1,Number(e.sets)||1)},()=>({reps:e.reps??'',weight:e.weight??'',done:false})),
+      cardio:e.kind==='cardio'?{acc:0,runStart:null,distance:''}:null}))};
+  const day=dayOf(s.date);day.sessions=day.sessions||{};day.sessions[s.id]=s;S.activeSession={date:s.date,id:s.id};
+  saveDay(s.date);saveState();tab='workout';scrollTo(0,0);render();
+}
+function startCardioNow(){
+  // quick "just start a timer" — e.g. a hike with no plan
+  const w={id:'quick',name:'cardio session',emoji:'🥾',exercises:[{id:'q',name:'cardio',kind:'cardio',minutes:''}]};
+  openSheet(`<h3>${em('⏱️')}quick cardio timer</h3><div class="field"><label>what are you doing?</label><input id="qc-n" placeholder="e.g. hike, walk, ride"></div>
+    <div class="actions"><button class="bk btn ghost" id="qc-x">cancel</button><button class="bk btn" id="qc-go">start timer</button></div>`,sh=>{
+    sh.querySelector('#qc-x').onclick=closeSheet;setTimeout(()=>sh.querySelector('#qc-n').focus(),50);
+    sh.querySelector('#qc-go').onclick=()=>{const n=sh.querySelector('#qc-n').value.trim()||'cardio';closeSheet();
+      if(activeSession()){toast('finish or discard your current workout first');tab='workout';render();return}
+      const s={id:uid(),workoutId:null,name:n,emoji:guessEmoji(n)||'🥾',taskId:null,date:today(),startedAt:Date.now(),endedAt:null,status:'active',lastSetAt:null,
+        exercises:[{id:uid(),name:n,kind:'cardio',unit:'',minutes:'',sets:[],cardio:{acc:0,runStart:Date.now(),distance:''}}]};
+      const day=dayOf(s.date);day.sessions=day.sessions||{};day.sessions[s.id]=s;S.activeSession={date:s.date,id:s.id};saveDay(s.date);saveState();tab='workout';render()};
+  });
+}
+function sessionView(){
+  const s=activeSession();if(!s){tab='today';return todayView()}
+  const st=sessSets(s),w=s.workoutId&&wkById(s.workoutId);
+  const ex=s.exercises.map((e,ei)=>{
+    if(e.kind==='cardio'){const c=e.cardio||(e.cardio={acc:0,runStart:null,distance:''});const secs=cardioSecs(c);const tgt=Number(e.minutes)||0;
+      return `<div class="box wex"><div class="row" style="justify-content:space-between"><b>${esc(em(guessEmoji(e.name)||'🏃'))}${esc(e.name)}</b><button class="bk edit" data-wexedit="${ei}">⋯</button></div>
+        <div class="bigtime" data-tick data-acc="${c.acc||0}" data-run="${c.runStart||0}">${fmtDur(secs)}</div>
+        ${tgt?`<div class="dim" style="text-align:center;font-size:.85em">target ${tgt} min</div><div class="meter acc" style="text-align:center">${meter(secs/(tgt*60),20)}</div>`:''}
+        <div class="row" style="justify-content:center;gap:8px;margin-top:8px"><button class="bk btn" data-wcardio="${ei}">${c.runStart?'pause':secs?'resume':'start'}</button>${secs&&!c.runStart?`<button class="bk btn ghost" data-wcreset="${ei}">reset</button>`:''}</div>
+        <div class="row" style="margin-top:10px"><span class="dim grow" style="font-size:.85em">distance (optional)</span><input type="number" step="any" inputmode="decimal" data-wdist="${ei}" value="${esc(c.distance)}" placeholder="km" style="width:6.5em;text-align:right"></div></div>`}
+    return `<div class="box wex"><div class="row" style="justify-content:space-between"><b>${esc(em(guessEmoji(e.name)||'🏋️'))}${esc(e.name)}</b><span class="dim" style="font-size:.85em">${e.sets.filter(x=>x.done).length}/${e.sets.length} sets <button class="bk edit" data-wexedit="${ei}">⋯</button></span></div>
+      <div class="wsets">${e.sets.map((x,si)=>`<div class="wset ${x.done?'done':''}"><span class="dim">set ${si+1}</span>
+        <label><input type="number" inputmode="numeric" data-wf="${ei}|${si}|reps" value="${esc(x.reps)}"> reps</label>
+        <label><input type="number" inputmode="decimal" step="any" data-wf="${ei}|${si}|weight" value="${esc(x.weight)}"> ${esc(e.unit||'kg')}</label>
+        <button class="wtick" data-wset="${ei}|${si}" aria-label="set ${si+1} done">${x.done?'✓':''}</button></div>`).join('')}</div>
+      <div class="row" style="gap:14px;margin-top:6px;font-size:.85em"><button class="bk" data-waddset="${ei}">+ set</button>${e.sets.length>1?`<button class="bk" data-wremset="${ei}">− set</button>`:''}</div></div>`}).join('');
+  return `<div class="row" style="justify-content:space-between;margin-top:4px"><button class="bk" data-tab="today">‹ back</button><span class="dim" style="font-size:.8em">keeps running in the background</span></div>
+  <h2 style="margin-top:8px"><span class="t">${esc(em(s.emoji||'🏋️'))}${esc(s.name)}</span><span class="r" data-tick data-acc="0" data-run="${s.startedAt}">${fmtDur((Date.now()-s.startedAt)/1000)}</span></h2>
+  ${st.t?`<div class="row"><span class="meter acc grow">${meter(st.d/st.t,22)}</span><b>${st.d}/${st.t}</b></div>`:''}
+  ${s.lastSetAt&&st.d<st.t?`<div class="rest">rest <b data-tick data-acc="0" data-run="${s.lastSetAt}">${fmtDur((Date.now()-s.lastSetAt)/1000)}</b></div>`:''}
+  ${ex}
+  <p style="margin:10px 0"><button class="bk" data-waddex>+ add exercise</button></p>
+  <div class="actions" style="justify-content:space-between"><button class="bk btn danger" data-wdiscard>discard</button><button class="bk btn" data-wfinish>${em('🏁')}finish workout</button></div>`;
+}
+function sess(){return activeSession()}
+function sessSave(rerender){const s=sess();if(!s)return;saveDay(s.date);if(rerender)render()}
+function editSessionExercise(ei){
+  const s=sess();const e=ei==null?null:s.exercises[ei];
+  const x=e?{name:e.name,kind:e.kind,unit:e.unit,minutes:e.minutes}:{name:'',kind:'strength',unit:'kg',minutes:''};
+  openSheet(`<h3>${e?'edit exercise':'add exercise'}</h3>
+    <div class="field"><label>exercise</label><input id="xe-n" value="${esc(x.name)}" placeholder="e.g. deadlift, row, run"></div>
+    <div class="field"><label>type</label><div class="seg" data-seg="kind"><button data-v="strength" class="${x.kind!=='cardio'?'on':''}">sets & reps</button><button data-v="cardio" class="${x.kind==='cardio'?'on':''}">cardio (timer)</button></div></div>
+    ${e?'':`<div class="field" id="xe-sr"><label>sets × reps @ weight</label><div class="row"><input type="number" id="xe-s" value="3" style="width:4.5em"><span>×</span><input type="number" id="xe-r" value="8" style="width:4.5em"><span>@</span><input type="number" step="any" id="xe-w" placeholder="kg" style="width:5.5em"></div></div>`}
+    <div class="field" id="xe-m"><label>target minutes (optional)</label><input type="number" id="xe-min" value="${esc(x.minutes)}" style="width:7em"></div>
+    <div class="actions">${e?'<button class="bk btn danger" id="xe-del" style="margin-right:auto">remove</button>':''}<button class="bk btn ghost" id="xe-x">cancel</button><button class="bk btn" id="xe-ok">save</button></div>`,sh=>{
+    const sync=()=>{const k=segVals(sh,'kind')[0];const sr=sh.querySelector('#xe-sr');if(sr)sr.classList.toggle('hidden',k==='cardio');sh.querySelector('#xe-m').classList.toggle('hidden',k!=='cardio')};
+    segBind(sh,'kind',false,sync);sync();sh.querySelector('#xe-x').onclick=closeSheet;if(!e)setTimeout(()=>sh.querySelector('#xe-n').focus(),50);
+    if(e)sh.querySelector('#xe-del').onclick=()=>{s.exercises.splice(ei,1);s.edited=true;closeSheet();sessSave(true)};
+    sh.querySelector('#xe-ok').onclick=()=>{const n=sh.querySelector('#xe-n').value.trim();if(!n){sh.querySelector('#xe-n').focus();return}
+      const k=segVals(sh,'kind')[0],mins=sh.querySelector('#xe-min').value;
+      if(e){e.name=n;e.minutes=mins;if(k!==e.kind){e.kind=k;if(k==='cardio'){e.sets=[];e.cardio={acc:0,runStart:null,distance:''}}else{e.cardio=null;e.sets=[{reps:8,weight:'',done:false}]}}}
+      else{const sets=Number(sh.querySelector('#xe-s').value)||3,reps=sh.querySelector('#xe-r').value,wt=sh.querySelector('#xe-w').value;
+        s.exercises.push({id:uid(),name:n,kind:k,unit:'kg',minutes:mins,sets:k==='cardio'?[]:Array.from({length:sets},()=>({reps,weight:wt,done:false})),cardio:k==='cardio'?{acc:0,runStart:null,distance:''}:null})}
+      s.edited=true;closeSheet();sessSave(true)};
+  });
+}
+function finishWorkout(){
+  const s=sess();if(!s)return;const st=sessSets(s),vol=sessVolume(s),car=sessCardio(s),w=s.workoutId&&wkById(s.workoutId);
+  const changed=!!w&&(s.edited||JSON.stringify(s.exercises.map(e=>[e.name,e.kind,e.sets.length,e.sets[0]&&String(e.sets[0].reps),e.sets[0]&&String(e.sets[0].weight)]))!==JSON.stringify((w.exercises||[]).map(e=>[e.name,e.kind||'strength',e.kind==='cardio'?0:Math.max(1,Number(e.sets)||1),e.kind==='cardio'?undefined:String(e.reps??''),e.kind==='cardio'?undefined:String(e.weight??'')])));
+  openSheet(`<h3>${em('🏁')}finish workout?</h3>
+    <dl class="kv" style="margin:0 0 10px"><dt>time</dt><dd>${fmtDur((Date.now()-s.startedAt)/1000)}</dd>${st.t?`<dt>sets</dt><dd>${st.d}/${st.t}</dd>`:''}${vol?`<dt>volume</dt><dd>${Math.round(vol).toLocaleString()} kg</dd>`:''}${car?`<dt>cardio</dt><dd>${fmtDur(car)}</dd>`:''}</dl>
+    ${st.t&&st.d<st.t?`<p class="dim" style="font-size:.85em;margin:0 0 8px">${st.t-st.d} set${st.t-st.d>1?'s':''} not ticked — that’s fine, it still counts.</p>`:''}
+    ${changed?`<div class="field"><label>you changed things during this workout</label><div class="seg" data-seg="upd"><button data-v="1" class="on">update the routine to match</button><button data-v="0">keep the routine as it was</button></div></div>`:''}
+    <div class="actions"><button class="bk btn ghost" id="wf-x">keep going</button><button class="bk btn" id="wf-ok">finish</button></div>`,sh=>{
+    segBind(sh,'upd',false);sh.querySelector('#wf-x').onclick=closeSheet;
+    sh.querySelector('#wf-ok').onclick=()=>{
+      for(const e of s.exercises)if(e.cardio&&e.cardio.runStart){e.cardio.acc=cardioSecs(e.cardio);e.cardio.runStart=null}
+      if(changed&&segVals(sh,'upd')[0]==='1'){w.exercises=s.exercises.map(e=>({id:e.srcId||uid(),name:e.name,kind:e.kind,unit:e.unit||'kg',minutes:e.minutes||'',sets:e.kind==='cardio'?'':e.sets.length,reps:e.sets[0]?e.sets[0].reps:'',weight:e.sets[0]?e.sets[0].weight:''}))}
+      s.status='done';s.endedAt=Date.now();S.activeSession=null;closeSheet();
+      const before=levelsSnapshot();const t=s.taskId&&taskById(s.taskId);let x;
+      if(t&&!doneOn(t,s.date)){x=award(t);dayOf(s.date).done[t.id]={at:Date.now(),xp:x}}
+      else{const stats=(w&&w.stats&&w.stats.length?w.stats:[]).filter(statById);const xp=Number(w&&w.xp)||20;
+        const sid=stats[0]||(S.stats.find(z=>/body|fit|health/i.test(z.name))||{}).id;
+        if(sid){x={[sid]:xp};const day=dayOf(s.date);day.logs=day.logs||[];day.logs.push({id:uid(),kind:'workout',statId:sid,title:s.name,minutes:Math.round((s.endedAt-s.startedAt)/60000),xp,at:Date.now()})}}
+      rebuildIndex();saveDay(s.date);saveState();tab='today';render();
+      toast(`${em('💪')}workout done${x?` · +${Object.values(x).reduce((a,b)=>a+b,0)} xp`:''}`,'lvl');sparks();checkLevelUps(before);
+    };
+  });
+}
+function editRoutine(id){
+  const ex=id?wkById(id):null;
+  const w=ex?clone(ex):{id:uid(),name:'',emoji:'',stats:[],xp:20,exercises:[{id:uid(),name:'',kind:'strength',sets:5,reps:5,weight:'',unit:'kg',minutes:''}]};
+  const t=ex&&ex.taskId&&taskById(ex.taskId);const days=t&&!t.archivedOn&&t.type==='weekdays'?t.days:t&&!t.archivedOn&&t.type==='daily'?[0,1,2,3,4,5,6]:[];
+  const body=s=>{const S2=sh=>sh;};
+  const rowHtml=(e,i)=>`<div class="box rex" data-i="${i}" style="margin-bottom:8px;padding:10px">
+      <div class="row"><input class="grow" data-rf="name" value="${esc(e.name)}" placeholder="exercise, e.g. squat"><button class="bk edit" data-rdel="${i}" aria-label="remove">✕</button></div>
+      <div class="seg" style="margin-top:6px" data-rk="${i}"><button data-v="strength" class="${e.kind!=='cardio'?'on':''}">sets & reps</button><button data-v="cardio" class="${e.kind==='cardio'?'on':''}">cardio</button></div>
+      <div class="row rs ${e.kind==='cardio'?'hidden':''}" style="margin-top:6px;flex-wrap:wrap"><input type="number" data-rf="sets" value="${esc(e.sets)}" style="width:4em"><span>×</span><input type="number" data-rf="reps" value="${esc(e.reps)}" style="width:4em"><span class="dim">reps @</span><input type="number" step="any" data-rf="weight" value="${esc(e.weight)}" placeholder="—" style="width:5em"><input data-rf="unit" value="${esc(e.unit||'kg')}" style="width:3.5em"></div>
+      <div class="row rc ${e.kind==='cardio'?'':'hidden'}" style="margin-top:6px"><span class="dim">target</span><input type="number" data-rf="minutes" value="${esc(e.minutes)}" placeholder="optional" style="width:6em"><span class="dim">min</span></div></div>`;
+  openSheet(`<h3>${ex?'edit workout':'new workout'}</h3>
+    <div class="field"><label>name</label><div class="row">${emojiOn()?`<input id="r-emoji" value="${esc(w.emoji||'')}" placeholder="🏋️" maxlength="8" style="width:3.6em;text-align:center">`:''}<input id="r-name" class="grow" value="${esc(w.name)}" placeholder="e.g. leg day, upper body, 5k run"></div></div>
+    <div class="field"><label>exercises</label><div id="r-list">${w.exercises.map(rowHtml).join('')}</div><button class="bk" id="r-add">+ add exercise</button></div>
+    <div class="field"><label>repeat on (adds it to your task list)</label><div class="seg multi" data-seg="days">${[1,2,3,4,5,6,0].map(d=>`<button data-v="${d}" class="${days.includes(d)?'on':''}">${DOW[d]}</button>`).join('')}</div><div class="dim" style="font-size:.8em;margin-top:4px">leave empty to just start it whenever.</div></div>
+    ${S.stats.length?`<div class="field"><label>levels up</label><div class="seg multi" data-seg="stats">${S.stats.map(s=>`<button data-v="${s.id}" class="${(w.stats||[]).includes(s.id)||(!ex&&/body|fit/i.test(s.name))?'on':''}">${sdot(s)}${esc(em(s.emoji))}${esc(s.name)}</button>`).join('')}</div></div>`:''}
+    <div class="actions">${ex?'<button class="bk btn danger" id="r-del" style="margin-right:auto">delete</button>':''}<button class="bk btn ghost" id="r-x">cancel</button><button class="bk btn" id="r-save">save</button></div>`,sh=>{
+    const list=sh.querySelector('#r-list');
+    const collect=()=>[...list.querySelectorAll('.rex')].map((el,i)=>{const g=k=>{const q=el.querySelector(`[data-rf="${k}"]`);return q?q.value:''};const kind=el.querySelector('[data-rk] button.on').dataset.v;return {id:(w.exercises[Number(el.dataset.i)]||{}).id||uid(),name:g('name').trim(),kind,sets:g('sets'),reps:g('reps'),weight:g('weight'),unit:g('unit')||'kg',minutes:g('minutes')}});
+    const bindRows=()=>{list.querySelectorAll('[data-rk] button').forEach(b=>b.onclick=()=>{const p=b.parentElement;p.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');const box=p.closest('.rex');box.querySelector('.rs').classList.toggle('hidden',b.dataset.v==='cardio');box.querySelector('.rc').classList.toggle('hidden',b.dataset.v!=='cardio')});
+      list.querySelectorAll('[data-rdel]').forEach(b=>b.onclick=()=>{w.exercises=collect();w.exercises.splice(Number(b.dataset.rdel),1);list.innerHTML=w.exercises.map(rowHtml).join('');bindRows()})};
+    bindRows();segBind(sh,'days',true);segBind(sh,'stats',true);
+    sh.querySelector('#r-add').onclick=()=>{w.exercises=collect();w.exercises.push({id:uid(),name:'',kind:'strength',sets:3,reps:8,weight:'',unit:'kg',minutes:''});list.innerHTML=w.exercises.map(rowHtml).join('');bindRows();const ins=list.querySelectorAll('[data-rf="name"]');ins[ins.length-1].focus()};
+    sh.querySelector('#r-x').onclick=closeSheet;if(!ex)setTimeout(()=>sh.querySelector('#r-name').focus(),50);
+    if(ex)sh.querySelector('#r-del').onclick=()=>confirmSheet(`delete “${esc(ex.name)}”?<div class="dim" style="font-weight:400;margin-top:6px">past sessions stay in your history. its scheduled task gets archived.</div>`,'delete',()=>{S.workouts=workouts().filter(x=>x.id!==ex.id);const tt=ex.taskId&&taskById(ex.taskId);if(tt)tt.archivedOn=today();saveState();render()});
+    sh.querySelector('#r-save').onclick=()=>{
+      const name=sh.querySelector('#r-name').value.trim();if(!name){sh.querySelector('#r-name').focus();return}
+      w.name=name;const re=sh.querySelector('#r-emoji');w.emoji=re?re.value.trim():(w.emoji||'');if(!w.emoji&&emojiOn())w.emoji=guessEmoji(name)||'🏋️';
+      w.exercises=collect().filter(e=>e.name);if(!w.exercises.length){toast('add at least one exercise');return}
+      w.stats=segVals(sh,'stats');const dd=segVals(sh,'days').map(Number);
+      let tk=w.taskId&&taskById(w.taskId);
+      if(dd.length){if(!tk||tk.archivedOn){tk={id:uid(),title:name,emoji:w.emoji,type:'weekdays',days:dd,stats:w.stats.slice(),xp:20,created:today(),order:Date.now(),workoutId:w.id};S.tasks.push(tk);w.taskId=tk.id}
+        else Object.assign(tk,{title:name,emoji:w.emoji,type:'weekdays',days:dd,stats:w.stats.slice(),workoutId:w.id})}
+      else if(tk&&!tk.archivedOn){tk.archivedOn=today()}
+      if(ex)Object.assign(ex,w);else workouts().push(w);saveState();closeSheet();render();
+    };
+  });
+}
+function workoutsView(){
+  const a=activeSession(),ss=allSessions().filter(s=>s.status==='done').sort((x,y)=>y.startedAt-x.startedAt);
+  const m30=addDays(today(),-29),recent=ss.filter(s=>s.date>=m30);
+  const exNames=[...new Set(ss.flatMap(s=>s.exercises.map(e=>e.name.toLowerCase())))];
+  if(!wkProgEx||!exNames.includes(wkProgEx))wkProgEx=exNames[0]||null;
+  return `${a?`<div class="box" style="margin-bottom:10px"><div class="row"><div class="grow"><b>${esc(em(a.emoji))}${esc(a.name)}</b> in progress <span class="dim" data-tick data-acc="0" data-run="${a.startedAt}">${fmtDur((Date.now()-a.startedAt)/1000)}</span></div><button class="bk btn" data-wresume>resume</button></div></div>`:''}
+  <h2 style="margin-top:4px"><span class="t">${em('🏋️')}workouts</span><span class="r"><button class="bk" data-rnew>+ new</button></span></h2>
+  ${workouts().length?workouts().map(w=>{const last=ss.find(s=>s.workoutId===w.id);return `<div class="stat" data-redit="${w.id}"><div class="top"><span class="nm">${esc(em(w.emoji))}${esc(w.name)}</span><button class="bk btn" data-rstart="${w.id}" style="padding:4px 12px">▶ start</button></div>
+    <div class="sub">${wkSummary(w)}</div><div class="sub">${esc(routineLabel(w))}${last?` · last done ${fmtDate(last.date)}`:''}</div></div>`}).join('')
+    :`<div class="box"><b>${em('👟')}build your first routine</b><p style="margin:6px 0 0;font-size:.92em">add exercises with sets, reps and weight (or cardio with an optional target time), pick which days it repeats, and it shows up on your today list. tap it there to run the workout set by set.</p><p style="margin:10px 0 0"><button class="bk btn" data-rnew>+ new workout</button></p></div>`}
+  <p style="margin:10px 0 0"><button class="bk" data-qcardio>${em('⏱️')}just start a cardio timer</button> <span class="dim" style="font-size:.85em">— for a hike or walk with no plan</span></p>
+  ${ss.length?`<h2><span class="t">last 30 days</span></h2><div class="kpis">
+    <div class="kpi"><b>${recent.length}</b><span>workouts</span></div>
+    <div class="kpi"><b>${fmtDur(recent.reduce((a,s)=>a+(s.endedAt-s.startedAt)/1000,0))}</b><span>total time</span></div>
+    <div class="kpi"><b>${Math.round(recent.reduce((a,s)=>a+sessVolume(s),0)).toLocaleString()}</b><span>kg lifted (volume)</span></div>
+    <div class="kpi"><b>${fmtDur(recent.reduce((a,s)=>a+sessCardio(s),0))}</b><span>cardio time</span></div></div>
+  ${exNames.length?`<div class="chart"><h2><span class="t">exercise progress</span></h2><div class="filters">${exNames.map(n=>`<button data-wprog="${esc(n)}" class="${wkProgEx===n?'on':''}">${esc(n)}</button>`).join('')}</div><div class="desc" id="wp-desc"></div><div class="chart-box" style="height:180px"><canvas id="w-prog"></canvas></div></div>`:''}
+  <h2><span class="t">history</span><span class="r">${ss.length}</span></h2>
+  <div class="list">${ss.slice(0,15).map(s=>{const st=sessSets(s),v=sessVolume(s),c=sessCardio(s);return `<div class="task" style="cursor:default"><span class="cb plain">${esc(em(s.emoji))||'•'}</span><div><div class="ttl">${esc(s.name)}</div><div class="meta"><span>${fmtDate(s.date,true)}</span><span>${fmtDur((s.endedAt-s.startedAt)/1000)}</span>${st.t?`<span>${st.d}/${st.t} sets</span>`:''}${v?`<span>${Math.round(v).toLocaleString()} kg</span>`:''}${c?`<span>cardio ${fmtDur(c)}</span>`:''}</div></div><button class="bk edit" data-wsdel="${s.date}|${s.id}" aria-label="delete">✕</button></div>`}).join('')}</div>`:''}`;
+}
+function drawWorkoutCharts(){
+  const el=$('#w-prog');if(!el||!window.Chart||!wkProgEx)return;const K=chartKit();
+  const pts=[];let cardio=false;
+  for(const s of allSessions().filter(s=>s.status==='done').sort((a,b)=>a.startedAt-b.startedAt)){
+    const es=s.exercises.filter(e=>e.name.toLowerCase()===wkProgEx);if(!es.length)continue;
+    if(es[0].kind==='cardio'){cardio=true;pts.push({d:s.date,y:Math.round(es.reduce((a,e)=>a+cardioSecs(e.cardio||{}),0)/60*10)/10})}
+    else{let best=0,reps=0;for(const e of es)for(const x of e.sets)if(x.done){const w=Number(x.weight)||0;if(w>best||(w===best&&Number(x.reps)>reps)){best=w;reps=Number(x.reps)||0}}pts.push({d:s.date,y:best,r:reps})}
+  }
+  const allBody=pts.every(p=>!cardio&&!p.y);
+  if(allBody)pts.forEach(p=>p.y=p.r);
+  $('#wp-desc').textContent=cardio?'minutes per session':allBody?'best reps per session':'heaviest completed set per session';
+  charts.push(new Chart(el,{type:'line',data:{labels:pts.map(p=>fmtDate(p.d)),datasets:[{label:wkProgEx,data:pts.map(p=>p.y),borderColor:K.heat,backgroundColor:K.heat,borderWidth:2,pointRadius:3,pointHoverRadius:5,tension:.2}]},
+    options:K.base({plugins:{legend:{display:false},tooltip:Object.assign({},K.tip,{callbacks:{label:c=>{const p=pts[c.dataIndex];return cardio?` ${p.y} min`:allBody?` ${p.y} reps`:` ${fmtNum(p.y)} kg × ${p.r}`}}})},scales:{x:K.xs,y:{beginAtZero:!cardio&&!allBody?false:true,grid:K.grid,border:K.border,ticks:{maxTicksLimit:5}}}})}));
+}
+function workoutBanner(){const a=activeSession();if(!a||tab==='workout')return '';return `<div class="box" style="margin:8px 0"><div class="row"><div class="grow"><b>${esc(em(a.emoji))}${esc(a.name)}</b> <span class="dim" data-tick data-acc="0" data-run="${a.startedAt}">${fmtDur((Date.now()-a.startedAt)/1000)}</span></div><button class="bk btn" data-wresume>resume</button></div></div>`}
+function wkEvent(d,el,e){
+  if(d.wstart){const [tid,date]=d.wstart.split('|');const t=taskById(tid);if(t)startWorkout(t.workoutId,t.id,date);return true}
+  if(d.wresume!==undefined){tab='workout';scrollTo(0,0);render();return true}
+  if(d.rnew!==undefined){editRoutine(null);return true}
+  if(d.rstart){e.stopPropagation();startWorkout(d.rstart,null,today());return true}
+  if(d.redit){editRoutine(d.redit);return true}
+  if(d.qcardio!==undefined){startCardioNow();return true}
+  if(d.wprog){wkProgEx=d.wprog;render();return true}
+  if(d.wsdel){const [dt,id]=d.wsdel.split('|');confirmSheet('delete this workout from history?','delete',()=>{if(DAYS[dt]&&DAYS[dt].sessions){delete DAYS[dt].sessions[id];saveDay(dt);render()}});return true}
+  const s=sess();if(!s)return false;
+  if(d.wset){const [ei,si]=d.wset.split('|').map(Number);const x=s.exercises[ei].sets[si];x.done=!x.done;x.at=x.done?Date.now():null;if(x.done){s.lastSetAt=Date.now();if(setting('haptics',true)&&navigator.vibrate)try{navigator.vibrate(15)}catch(_){}}
+    const st=sessSets(s);sessSave(true);if(x.done&&st.d===st.t&&!s.exercises.some(e=>e.kind==='cardio'&&!cardioSecs(e.cardio||{})))toast(`${em('🎉')}all sets done — tap finish when you’re ready`);return true}
+  if(d.waddset){const e=s.exercises[Number(d.waddset)];const l=e.sets[e.sets.length-1]||{reps:'',weight:''};e.sets.push({reps:l.reps,weight:l.weight,done:false});s.edited=true;sessSave(true);return true}
+  if(d.wremset){const e=s.exercises[Number(d.wremset)];if(e.sets.length>1){e.sets.pop();s.edited=true;sessSave(true)}return true}
+  if(d.wcardio){const c=s.exercises[Number(d.wcardio)].cardio;if(c.runStart){c.acc=cardioSecs(c);c.runStart=null}else c.runStart=Date.now();sessSave(true);return true}
+  if(d.wcreset){const c=s.exercises[Number(d.wcreset)].cardio;c.acc=0;c.runStart=null;sessSave(true);return true}
+  if(d.wexedit){editSessionExercise(Number(d.wexedit));return true}
+  if(d.waddex!==undefined){editSessionExercise(null);return true}
+  if(d.wfinish!==undefined){finishWorkout();return true}
+  if(d.wdiscard!==undefined){confirmSheet('discard this workout?<div class="dim" style="font-weight:400;margin-top:6px">nothing gets saved and the task stays unticked.</div>','discard',()=>{s.status='discarded';saveDay(s.date);if(DAYS[s.date].sessions)delete DAYS[s.date].sessions[s.id];saveDay(s.date);S.activeSession=null;saveState();tab='today';render()});return true}
+  return false;
+}
+document.addEventListener('input',e=>{const t=e.target;const s=sess();if(!s)return;
+  if(t.dataset.wf){const [ei,si,k]=t.dataset.wf.split('|');s.exercises[+ei].sets[+si][k]=t.value;s.edited=true;clearTimeout(t._tm);t._tm=setTimeout(()=>sessSave(false),400)}
+  if(t.dataset.wdist){s.exercises[+t.dataset.wdist].cardio.distance=t.value;clearTimeout(t._tm);t._tm=setTimeout(()=>sessSave(false),400)}});
+setInterval(()=>{document.querySelectorAll('[data-tick]').forEach(el=>{const acc=Number(el.dataset.acc)||0,run=Number(el.dataset.run)||0;el.textContent=fmtDur(acc+(run?(Date.now()-run)/1000:0))})},1000);
+
+/* ============ money goals ============ */
+const METRIC_L={net:'net worth',assets:'what you have',debts:'what you owe'};
+function metricLabel(m){if(m&&m.startsWith('acc:')){const a=accById(m.slice(4));return a?a.name+' balance':'an account'}return METRIC_L[m]||'net worth'}
+function metricOf(c,m){if(!c)return null;if(m&&m.startsWith('acc:')){const v=c.balances[m.slice(4)];return v==null?null:Number(v)}const n=netOf(c);return m==='assets'?n.assets:m==='debts'?n.debts:n.net}
+function moneyNow(m){const cs=checkins();for(let i=cs.length-1;i>=0;i--){const v=metricOf(cs[i],m);if(v!=null)return v}return 0}
+function gHistory(g){if(g.measure!=='money')return g.history||[];return checkins().filter(c=>c.date>=(g.created||'0')).map(c=>({date:c.date,value:metricOf(c,g.metric)})).filter(x=>x.value!=null)}
+function moneyGoalsCheck(){
+  const before=levelsSnapshot();let hit=0,done=[];
+  for(const g of goals()){if(g.status!=='active'||g.measure!=='money')continue;const v=moneyNow(g.metric),up=Number(g.target)>=Number(g.start||0);
+    for(const s of g.subs||[])if(s.value!==''&&s.value!=null&&!subDone(g,s)&&!s.taskId&&(up?v>=Number(s.value):v<=Number(s.value))){markSubDone(g,s,today());hit++}
+    if(up?v>=Number(g.target):v<=Number(g.target))done.push(g)}
+  if(hit){rebuildIndex();saveState();toast(`${em('✅')}${hit} money checkpoint${hit>1?'s':''} reached · +${hit*20} xp`)}
+  for(const g of done)toast(`${em('🎯')}you hit “${esc(g.title)}”! mark it complete on the goals tab.`,'lvl');
+  checkLevelUps(before);
+}
+function moneyGoalSheet(){
+  const f=F();const opts=[['net','net worth'],['assets','what you have'],['debts','pay down what you owe'],...f.accounts.filter(a=>!a.archived).map(a=>['acc:'+a.id,(a.type==='debt'?'pay down ':'')+a.name])];
+  openSheet(`<h3>${em('💰')}new money goal</h3>
+    <div class="field"><label>track</label><div class="seg" data-seg="metric">${opts.map(([v,l],i)=>`<button data-v="${v}" class="${i===0?'on':''}">${esc(l)}</button>`).join('')}</div></div>
+    <div class="field"><label>target</label><input type="number" inputmode="decimal" step="any" id="mg-t" placeholder="e.g. 10000" style="width:10em"><div class="dim" id="mg-now" style="font-size:.85em;margin-top:4px"></div></div>
+    <div class="field"><label>by when</label><div class="row" style="flex-wrap:wrap"><input type="date" id="mg-d"><div class="seg" data-seg="quick">${[[3,'3 months'],[6,'6 months'],[12,'1 year'],[24,'2 years']].map(([m,l])=>`<button data-v="${m}">${l}</button>`).join('')}</div></div></div>
+    <div class="field"><label>name</label><input id="mg-n" placeholder=""></div>
+    <div class="field"><label>checkpoints</label><div class="seg" data-seg="auto"><button data-v="0">none</button><button data-v="4" class="on">4</button><button data-v="6">6</button><button data-v="12">12</button></div></div>
+    <p class="dim" style="font-size:.85em">it updates itself every time you do a weekly check-in.</p>
+    <div class="actions"><button class="bk btn ghost" id="mg-x">cancel</button><button class="bk btn" id="mg-s">save goal</button></div>`,sh=>{
+    let nameTouched=false;
+    const sync=()=>{const m=segVals(sh,'metric')[0],t=sh.querySelector('#mg-t').value;sh.querySelector('#mg-now').textContent=`right now: ${money(moneyNow(m))}`;
+      if(!nameTouched){const dn=m==='debts'||(m.startsWith('acc:')&&(accById(m.slice(4))||{}).type==='debt');sh.querySelector('#mg-n').value=t?(dn?`get ${metricLabel(m)} down to ${money(Number(t))}`:`reach ${money(Number(t))} ${metricLabel(m)}`):''}};
+    segBind(sh,'metric',false,sync);segBind(sh,'auto',false);sh.querySelector('#mg-t').addEventListener('input',sync);sh.querySelector('#mg-n').addEventListener('input',()=>nameTouched=true);sync();
+    sh.querySelectorAll('[data-seg="quick"] button').forEach(b=>b.addEventListener('click',()=>{sh.querySelector('#mg-d').value=addDaysMonths(Number(b.dataset.v))}));
+    sh.querySelector('#mg-x').onclick=closeSheet;setTimeout(()=>sh.querySelector('#mg-t').focus(),50);
+    sh.querySelector('#mg-s').onclick=()=>{const m=segVals(sh,'metric')[0],t=sh.querySelector('#mg-t').value;if(t===''){sh.querySelector('#mg-t').focus();return}
+      const s0=moneyNow(m),tg=Number(t),dl=sh.querySelector('#mg-d').value,n=Number(segVals(sh,'auto')[0]||0);
+      const g={id:uid(),title:sh.querySelector('#mg-n').value.trim()||`reach ${money(tg)}`,emoji:emojiOn()?'💰':'',specific:`${metricLabel(m)} goes from ${money(s0)} to ${money(tg)}`,measure:'money',metric:m,start:s0,target:tg,unit:'$',achievable:'',relevant:'',stats:[],deadline:dl,created:today(),status:'active',subs:[],history:[],order:Date.now()};
+      if(n&&tg!==s0){const span=dl?dayDiff(today(),dl):0;for(let i=1;i<=n;i++){const v=Math.round(s0+(tg-s0)*i/n);g.subs.push({id:uid(),title:i===n?`reach the target: ${money(v)}`:`checkpoint ${i}: ${money(v)}`,value:v,due:span>0?addDays(today(),Math.round(span*i/n)):'',doneOn:null})}}
+      goals().push(g);saveState();closeSheet();render();toast(`${em('🎯')}money goal added`)};
+  });
+}
+
+/* ============ reminders (installed app only) ============ */
+const IS_APP=true;
+function remPrefs(){return Object.assign({on:false,hour:8,money:true,workout:true,steps:true,daily:true},(S&&S.settings&&S.settings.rem)||{})}
+function reminderPlan(){
+  if(!S)return [];const p=remPrefs(),items=[],t=today();
+  if(p.money&&F().accounts.some(a=>!a.archived)){const f=F(),cs=checkins();for(let w=0;w<2;w++){const ws=addDays(weekStart(t),w*7),due=addDays(ws,(f.checkinDay+6)%7);if(cs.some(c=>c.date>=ws&&c.date<=addDays(ws,6)))continue;const d=due<t?t:due;items.push({id:'money-'+ws,date:d,title:`${emojiOn()?'💰 ':''}weekly money check-in`,body:'takes a minute — update your balances so the graphs stay current.'})}}
+  for(let i=0;i<7;i++){const d=addDays(t,i),its=dayTasks(d),open=its.filter(o=>!o.done);
+    if(p.workout)for(const o of open)if(o.t.workoutId){const w=wkById(o.t.workoutId);items.push({id:'wk-'+o.t.id+'-'+d,date:d,title:`${emojiOn()?'🏋️ ':''}${w?w.name:o.t.title} today`,body:w?wkSummary(w).replace(/&[^;]+;/g,''):'workout scheduled'})}
+    if(p.daily&&open.length)items.push({id:'day-'+d,date:d,title:`${emojiOn()?'✅ ':''}${open.length} thing${open.length>1?'s':''} on today’s list`,body:open.slice(0,4).map(o=>o.t.title).join(' · ')})}
+  if(p.steps)for(const {g,s} of subsDueSoon(7))items.push({id:'step-'+s.id+'-'+(s.due<t?t:s.due),date:s.due<t?t:s.due,title:`${emojiOn()?'🎯 ':''}goal step due${s.due<t?' (overdue)':''}`,body:`${s.title} — ${g.title}`});
+  return items;
+}
+let remTimer=null;
+function syncReminders(){
+  if(!IS_APP||!('serviceWorker' in navigator)||!window.caches)return;clearTimeout(remTimer);
+  remTimer=setTimeout(async()=>{try{const p=remPrefs();const plan={generated:Date.now(),hour:p.hour,on:p.on,items:p.on?reminderPlan():[]};
+    const c=await caches.open('questlog-reminders');await c.put('/__plan',new Response(JSON.stringify(plan),{headers:{'content-type':'application/json'}}));
+    const reg=await navigator.serviceWorker.ready;
+    if(p.on&&'showTrigger' in Notification.prototype&&Notification.permission==='granted'){ // exact-time scheduling if the browser ever supports it
+      const old=await reg.getNotifications({includeTriggered:true});old.forEach(n=>n.data&&n.data.sched&&n.close());
+      for(const it of plan.items){const [y,m,d]=it.date.split('-').map(Number);const at=new Date(y,m-1,d,p.hour,0,0).getTime();if(at>Date.now())reg.showNotification(it.title,{body:it.body,tag:it.id,icon:'icon-192.png',badge:'icon-192.png',data:{sched:1,url:'./'},showTrigger:new TimestampTrigger(at)})}}
+  }catch(e){console.warn('reminders',e)}},800);
+}
+async function enableReminders(){
+  if(!('Notification' in window)){toast('this browser can’t show notifications');return}
+  const perm=await Notification.requestPermission();if(perm!=='granted'){toast('notifications are blocked — allow them in your phone’s settings for this app');return}
+  S.settings.rem=Object.assign(remPrefs(),{on:true});saveState();
+  try{const reg=await navigator.serviceWorker.ready;
+    if('periodicSync' in reg){const st=await navigator.permissions.query({name:'periodic-background-sync'});if(st.state==='granted'){await reg.periodicSync.register('questlog-reminders',{minInterval:6*60*60*1000});S.settings.remBg=true}else S.settings.remBg=false}else S.settings.remBg=false;
+  }catch(e){S.settings.remBg=false}
+  saveState();syncReminders();render();toast('reminders on ✓');
+}
+async function testReminder(){try{const reg=await navigator.serviceWorker.ready;await reg.showNotification(`${emojiOn()?'🐱 ':''}questlog test`,{body:'reminders are working. real ones show up when something’s due.',icon:'icon-192.png',badge:'icon-192.png',tag:'test',data:{url:'./'}})}catch(e){toast('couldn’t show a notification')}}
+function remindersSection(){
+  if(!IS_APP)return '';const p=remPrefs(),seg=(k,o,c)=>`<div class="seg" data-set="${k}">${o.map(([v,l])=>`<button data-v="${v}" class="${String(c)===String(v)?'on':''}">${l}</button>`).join('')}</div>`;
+  const perm=('Notification' in window)?Notification.permission:'unsupported';
+  return `<h2><span class="t">reminders</span></h2>
+  ${!p.on?`<p style="margin-top:0">get a notification when something’s due, even with the app closed.</p><p><button class="bk btn" data-remon>${em('🔔')}turn on reminders</button></p>`:`
+  ${perm==='denied'?`<div class="banner">notifications are blocked for this app. turn them on in android settings → apps → questlog → notifications.</div>`:''}
+  <div class="field"><label>remind me about</label>
+    <div class="set-row"><span>weekly money check-in</span>${seg('rem-money',[['true','on'],['false','off']],p.money)}</div>
+    <div class="set-row"><span>workouts scheduled today</span>${seg('rem-workout',[['true','on'],['false','off']],p.workout)}</div>
+    <div class="set-row"><span>goal steps due</span>${seg('rem-steps',[['true','on'],['false','off']],p.steps)}</div>
+    <div class="set-row"><span>what’s on today’s list</span>${seg('rem-daily',[['true','on'],['false','off']],p.daily)}</div></div>
+  <div class="field"><label>not before</label>${seg('rem-hour',[[7,'7am'],[8,'8am'],[9,'9am'],[10,'10am'],[12,'noon']],p.hour)}</div>
+  <p class="dim" style="font-size:.85em">${S.settings.remBg?'android wakes the app in the background a couple of times a day to check what’s due, so reminders arrive at some point after the time above (and before 9pm) rather than exactly on it. the more you use the app, the more often android checks.':'<span class="acc">your phone isn’t letting the app check in the background yet.</span> this usually starts working after the app has been installed from chrome and used for a few days. reminders will still catch up whenever you open the app.'}</p>
+  <div class="actions" style="justify-content:flex-start"><button class="bk btn ghost" data-remtest>send a test</button><button class="bk btn ghost" data-remoff>turn off</button></div>`}`;
+}
+
 /* ============ events ============ */
 document.addEventListener('click',e=>{
-  const el=e.target.closest('[data-dlbackup],[data-ulbackup],button[data-skin],[data-more],[data-gopen],[data-gback],[data-gnew],[data-gedit],[data-gprog],[data-gdone],[data-gdel],[data-subedit],[data-subtoggle],[data-subnew],[data-subtoday],[data-ci],[data-ciedit],[data-ciall],[data-accnew],[data-accedit],[data-accrestore],[data-incnew],[data-incedit],[data-mrange],[data-intro],[data-set] button,[data-showdone],[data-tab],[data-toggle],[data-edit],[data-nav],[data-newtask],[data-newstat],[data-editstat],[data-dellog],[data-range],[data-fstat],[data-restore],[data-export],[data-import],[data-reset],[data-calday],[data-calnav],[data-addon],[data-dec] button');
+  const el=e.target.closest('[data-dlbackup],[data-ulbackup],[data-msub],[data-wstart],[data-wresume],[data-rnew],[data-rstart],[data-redit],[data-qcardio],[data-wprog],[data-wsdel],[data-wset],[data-waddset],[data-wremset],[data-wcardio],[data-wcreset],[data-wexedit],[data-waddex],[data-wfinish],[data-wdiscard],[data-mgnew],[data-remon],[data-remtest],[data-remoff],button[data-skin],[data-more],[data-gopen],[data-gback],[data-gnew],[data-gedit],[data-gprog],[data-gdone],[data-gdel],[data-subedit],[data-subtoggle],[data-subnew],[data-subtoday],[data-ci],[data-ciedit],[data-ciall],[data-accnew],[data-accedit],[data-accrestore],[data-incnew],[data-incedit],[data-mrange],[data-intro],[data-set] button,[data-showdone],[data-tab],[data-toggle],[data-edit],[data-nav],[data-newtask],[data-newstat],[data-editstat],[data-dellog],[data-range],[data-fstat],[data-restore],[data-export],[data-import],[data-reset],[data-calday],[data-calnav],[data-addon],[data-dec] button');
   if(!el)return;const d=el.dataset;
   if(d.skin&&el.tagName==='BUTTON'){applyLook({skin:d.skin},true);render();return}
   if(!S&&d.import===undefined&&d.ulbackup===undefined)return;
+  if(d.edit===undefined&&d.subedit===undefined&&wkEvent(d,el,e))return;
+  if(d.mgnew!==undefined){moneyGoalSheet();return}
+  if(d.remon!==undefined){enableReminders();return}
+  if(d.remtest!==undefined){testReminder();return}
+  if(d.remoff!==undefined){S.settings.rem=Object.assign(remPrefs(),{on:false});saveState();syncReminders();render();return}
   if(d.showdone!==undefined){showDone=true;render();return}
   if(d.intro!==undefined){showIntro();return}
   if(el.parentElement&&el.parentElement.dataset.set){const k=el.parentElement.dataset.set,v=el.dataset.v;
     if(k==='theme'||k==='mode'||k==='emoji'){applyLook({[k]:v},true);render();return}
     if(k.startsWith('fin-')){const f=F();if(k==='fin-currency')f.currency=v;if(k==='fin-day')f.checkinDay=Number(v);if(k==='fin-stat')f.statId=v||null;saveFin();render();return}
+    if(k.startsWith('rem-')){const r=remPrefs();const kk=k.slice(4);r[kk]=kk==='hour'?Number(v):v==='true';S.settings.rem=r;saveState();syncReminders();render();return}
     if(k==='celebrate')S.settings.celebrate=v;
     if(k==='hideDone'){S.settings.hideDone=v==='true';showDone=false}
     if(k==='haptics')S.settings.haptics=v==='true';
     if(k.startsWith('dec-')){const c=decayCfg();if(k==='dec-on')c.on=v==='1';if(k==='dec-grace')c.grace=Number(v);if(k==='dec-rate')c.rate=Number(v);S.settings.decay=c;dirty();storeLevels(levelsSnapshot())}
     saveState();render();return}
-  if(d.tab){if(['cal','tasks','stats','settings'].includes(d.tab)){moreTab=d.tab;tab='more'}else{if(d.tab==='goals'&&tab==='goals')goalSel=null;tab=d.tab}scrollTo(0,0);render();return}
+  if(d.tab){if(d.tab==='money'&&tab==='money')moneySub=null;if(['cal','tasks','stats','settings','data'].includes(d.tab)){moreTab=d.tab;tab='more'}else{if(d.tab==='goals'&&tab==='goals')goalSel=null;tab=d.tab}scrollTo(0,0);render();return}
   if(d.more){moreTab=d.more;render();return}
   if(d.gopen){goalSel=d.gopen;tab='goals';scrollTo(0,0);render();return}
   if(d.gback!==undefined){goalSel=null;render();return}
@@ -1430,6 +1843,7 @@ document.addEventListener('click',e=>{
   if(d.incnew!==undefined){editIncome(null);return}
   if(d.incedit){editIncome(d.incedit);return}
   if(d.mrange!==undefined){moneyRange=Number(d.mrange);render();return}
+  if(d.msub!==undefined){moneySub=d.msub||null;scrollTo(0,0);render();return}
   if(d.edit!==undefined){e.stopPropagation();editTask(d.edit);return}
   if(d.dellog){const day=DAYS[d.date];day.logs=day.logs.filter(l=>l.id!==d.dellog);saveDay(d.date);render();return}
   if(d.toggle){toggleTask(d.toggle,d.date,el.querySelector('.cb'));return}
